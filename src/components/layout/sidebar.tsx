@@ -26,6 +26,9 @@ import {
   X,
   Zap,
   ClipboardList,
+  Calendar,
+  CreditCard,
+  FileSignature,
 } from "lucide-react";
 import type { AccountRole } from "@/lib/auth/roles";
 
@@ -95,6 +98,9 @@ const navItems: NavItem[] = [
   { href: "/inbox", label: "Caixa de Entrada", icon: MessageSquare },
   { href: "/pedidos", label: "Meus Pedidos", icon: ClipboardList },
   { href: "/email", label: "E-mail", icon: Mail },
+  { href: "/pagamentos", label: "Pagamentos", icon: CreditCard },
+  { href: "/assinaturas", label: "Assinaturas", icon: FileSignature },
+  { href: "/agenda", label: "Agenda", icon: Calendar },
   { href: "/contacts", label: "Contatos", icon: Users },
   { href: "/pipelines", label: "Funil de Vendas", icon: GitBranch },
   { href: "/broadcasts", label: "Transmissões", icon: Radio },
@@ -154,7 +160,7 @@ const [collapsed, setCollapsed] = useState(() => {
     () => {
       if (canEditSettings) return navItems
       return navItems.filter(
-        (item) => !['/broadcasts', '/automations', '/flows', '/pedidos'].includes(item.href),
+        (item) => !['/broadcasts', '/automations', '/flows', '/pedidos', '/pagamentos', '/assinaturas', '/agenda'].includes(item.href),
       )
     },
     [canEditSettings],

@@ -22,6 +22,8 @@ import { TemplateManager } from '@/components/settings/template-manager';
 import { FieldsAndTagsPanel } from '@/components/settings/fields-and-tags-panel';
 import { DealsSettings } from '@/components/settings/deals-settings';
 import { MembersTab } from '@/components/settings/members-tab';
+import { PixConfig } from "@/components/settings/pix-config"
+import { ZapsignConfig } from "@/components/settings/zapsign-config"
 import {
   AGENT_SECTIONS,
   resolveSection,
@@ -77,6 +79,8 @@ function SettingsPageInner() {
         webchat: <WebchatConfig />,
         linkedin: <LinkedInConfig />,
         email: <EmailConfig />,
+        pix: <PixConfig />,
+        zapsign: <ZapsignConfig />,
         templates: <TemplateManager />,
         fields: <FieldsAndTagsPanel />,
         deals: <DealsSettings />,
