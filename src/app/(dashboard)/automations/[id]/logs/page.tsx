@@ -12,6 +12,7 @@ import {
 } from "lucide-react"
 
 import { createClient } from "@/lib/supabase/client"
+import { useAuth } from "@/hooks/use-auth"
 import type {
   Automation,
   AutomationLog,
@@ -28,6 +29,11 @@ export default function AutomationLogsPage({
 }) {
   const { id } = use(params)
   const router = useRouter()
+  const { canEditSettings, profileLoading } = useAuth()
+
+  useEffect(() => {
+    if (!profileLoading && !canEditSettings) router.replace('/dashboard')
+  }, [canEditSettings, profileLoading, router])
 
   const [automation, setAutomation] = useState<Automation | null>(null)
   const [logs, setLogs] = useState<AutomationLog[] | null>(null)

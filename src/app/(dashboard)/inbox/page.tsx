@@ -118,7 +118,7 @@ export default function InboxPage() {
       const supabase = createClient();
       const { data, error } = await supabase
         .from("conversations")
-        .select("*, contact:contacts(*)")
+        .select("*, contact:contacts(*), channel:channels(*), assigned_agent:profiles!conversations_assigned_agent_id_fkey(*)")
         .eq("id", convId)
         .maybeSingle();
       if (error) {
@@ -133,7 +133,7 @@ export default function InboxPage() {
         return;
       }
       if (!data) return;
-      const fetched = data as Conversation;
+      const fetched = data as Conversation & { assigned_agent?: any };
       setConversations((prev) => {
         const existing = prev.find((c) => c.id === fetched.id);
         if (existing) {
@@ -144,7 +144,11 @@ export default function InboxPage() {
           // realtime payloads never carry.
           return prev.map((c) =>
             c.id === fetched.id
-              ? { ...c, contact: c.contact ?? fetched.contact }
+              ? { 
+                  ...c, 
+                  contact: c.contact ?? fetched.contact,
+                  assigned_agent: (c as any).assigned_agent ?? fetched.assigned_agent 
+                }
               : c,
           );
         }
@@ -518,20 +522,39 @@ export default function InboxPage() {
   );
 
   const handleAssignChange = useCallback(
-    (conversationId: string, assignedAgentId: string | null) => {
-      setConversations((prev) =>
-        prev.map((c) =>
-          c.id === conversationId
-            ? { ...c, assigned_agent_id: assignedAgentId ?? undefined }
-            : c
-        )
-      );
-      if (activeConversation?.id === conversationId) {
-        setActiveConversation((prev) =>
-          prev
-            ? { ...prev, assigned_agent_id: assignedAgentId ?? undefined }
-            : prev
+    async (conversationId: string, assignedAgentId: string | null) => {
+      try {
+        const supabase = createClient();
+        const { error } = await supabase
+          .from("conversations")
+          .update({ assigned_agent_id: assignedAgentId })
+          .eq("id", conversationId);
+          
+        if (error) {
+          console.error("Failed to assign agent:", error);
+          toast.error("Erro ao atribuir agente");
+          return;
+        }
+        
+        // Update local state
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === conversationId
+              ? { ...c, assigned_agent_id: assignedAgentId ?? undefined }
+              : c
+          )
         );
+        if (activeConversation?.id === conversationId) {
+          setActiveConversation((prev) =>
+            prev
+              ? { ...prev, assigned_agent_id: assignedAgentId ?? undefined }
+              : prev
+          );
+        }
+        toast.success("Agente atribuído com sucesso");
+      } catch (err) {
+        console.error("Error assigning agent:", err);
+        toast.error("Erro ao atribuir agente");
       }
     },
     [activeConversation]
@@ -552,7 +575,7 @@ export default function InboxPage() {
         <div className="flex shrink-0 items-center justify-center gap-2 border-b border-amber-500/20 bg-amber-500/10 px-4 py-2">
           <WifiOff className="h-4 w-4 text-amber-400" />
           <p className="text-xs text-amber-400">
-            WhatsApp® is not connected. Go to Settings to connect your account.
+            WhatsApp® não está conectado. Acesse Configurações para conectar sua conta.
           </p>
         </div>
       )}
@@ -572,7 +595,9 @@ export default function InboxPage() {
             onSelect={handleSelectConversation}
             conversations={conversations}
             onConversationsLoaded={handleConversationsLoaded}
+            onAssignChange={handleAssignChange}
             resyncToken={resyncToken}
+            onDeselect={handleCloseConversation}
           />
         </div>
 

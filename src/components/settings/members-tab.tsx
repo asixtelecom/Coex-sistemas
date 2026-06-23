@@ -55,7 +55,7 @@ import {
 import { RequireRole } from '@/components/auth/require-role';
 import { useAuth } from '@/hooks/use-auth';
 import type { AccountRole } from '@/lib/auth/roles';
-import { InviteMemberDialog } from './invite-member-dialog';
+import { CreateAgentDialog } from './create-agent-dialog';
 import { SettingsPanelHead } from './settings-panel-head';
 import { ROLE_META } from './role-meta';
 
@@ -270,7 +270,7 @@ export function MembersTab() {
           <RequireRole min="admin">
             <Button onClick={() => setInviteOpen(true)}>
               <Plus className="size-4" />
-              Invite member
+              Add agent
             </Button>
           </RequireRole>
         }
@@ -438,7 +438,7 @@ export function MembersTab() {
                   No pending invitations.
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Click <span className="text-muted-foreground">Invite member</span>{' '}
+                  Click <span className="text-muted-foreground">Add agent</span>{' '}
                   above to generate a shareable link.
                 </p>
               </CardContent>
@@ -495,7 +495,7 @@ export function MembersTab() {
         </div>
       </RequireRole>
 
-      <InviteMemberDialog
+      <CreateAgentDialog
         open={inviteOpen}
         onOpenChange={setInviteOpen}
         onCreated={loadEverything}

@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
+import { useAuth } from "@/hooks/use-auth";
 import { FlowEditorShell } from "@/components/flows/flow-editor-shell";
 import type { FlowRow, FlowNodeRow } from "@/lib/flows/types";
 
@@ -22,7 +23,12 @@ import type { FlowRow, FlowNodeRow } from "@/lib/flows/types";
  */
 export default function FlowEditorPage() {
   const router = useRouter();
+  const { canEditSettings, profileLoading } = useAuth();
   const params = useParams<{ id: string }>();
+
+  useEffect(() => {
+    if (!profileLoading && !canEditSettings) router.replace('/dashboard');
+  }, [canEditSettings, profileLoading, router]);
 
   const [flow, setFlow] = useState<FlowRow | null>(null);
   const [nodes, setNodes] = useState<FlowNodeRow[]>([]);

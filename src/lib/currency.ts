@@ -11,7 +11,10 @@
  */
 
 /** App-wide fallback when no account/deal currency is available. */
-export const DEFAULT_CURRENCY = "USD";
+export const DEFAULT_CURRENCY = "BRL";
+
+/** Locale for currency/number grouping — matches `<html lang="pt-BR">`. */
+export const CURRENCY_LOCALE = "pt-BR";
 
 export interface CurrencyOption {
   /** ISO-4217 code, e.g. "USD". Stored verbatim in the DB. */
@@ -64,17 +67,18 @@ export function formatCurrency(
   const code = (currency || DEFAULT_CURRENCY).trim();
   const amount = Number(value) || 0;
   try {
-    return new Intl.NumberFormat(undefined, {
+    return new Intl.NumberFormat(CURRENCY_LOCALE, {
       style: "currency",
       currency: code,
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(amount);
   } catch {
     // Invalid ISO code — show the raw code + grouped number so the
     // value is still legible instead of throwing.
-    return `${code} ${new Intl.NumberFormat(undefined, {
-      maximumFractionDigits: 0,
+    return `${code} ${new Intl.NumberFormat(CURRENCY_LOCALE, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(amount)}`;
   }
 }

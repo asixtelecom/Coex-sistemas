@@ -127,7 +127,9 @@ export function PipelineSettings({
     setSaving(false);
 
     if (renameRes.error || stagesRes.error) {
-      toast.error("Failed to save pipeline");
+      const error = renameRes.error || stagesRes.error;
+      toast.error(`Failed to save pipeline: ${error?.message || "Unknown error"}`);
+      console.error("Pipeline save error:", error);
       return;
     }
 

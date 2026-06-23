@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
@@ -15,6 +16,7 @@ import {
   DollarSign,
   StickyNote,
   Plus,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -30,16 +32,17 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const [deals, setDeals] = useState<Deal[]>([]);
   const [notes, setNotes] = useState<ContactNote[]>([]);
   const [tags, setTags] = useState<(Tag & { contact_tag_id: string })[]>([]);
+  const [allTags, setAllTags] = useState<Tag[]>([]);
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
 
   const fetchContactData = useCallback(async () => {
-    if (!contact) return;
+    if (!contact || !accountId) return;
 
     const supabase = createClient();
 
-    // Fetch deals, notes, and tags in parallel
-    const [dealsRes, notesRes, tagsRes] = await Promise.all([
+    // Fetch deals, notes, contact's tags, and all tags in parallel
+    const [dealsRes, notesRes, tagsRes, allTagsRes] = await Promise.all([
       supabase
         .from("deals")
         .select("*, stage:pipeline_stages(*)")
@@ -54,7 +57,27 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
         .from("contact_tags")
         .select("id, tag_id, tags(*)")
         .eq("contact_id", contact.id),
+      supabase
+        .from("tags")
+        .select("*"),
     ]);
+
+    console.log('Deals data:', dealsRes.data);
+    console.log('Notes data:', notesRes.data);
+    console.log('Contact tags data:', tagsRes.data);
+    console.log('All tags data:', allTagsRes.data);
+    console.log('Account ID:', accountId);
+
+    // Fix any tags that don't have account_id
+    if (allTagsRes.data && allTagsRes.data.length > 0) {
+      const tagsWithoutAccountId = allTagsRes.data.filter(tag => !tag.account_id);
+      for (const tag of tagsWithoutAccountId) {
+        await supabase
+          .from('tags')
+          .update({ account_id: accountId })
+          .eq('id', tag.id);
+      }
+    }
 
     if (dealsRes.data) setDeals(dealsRes.data);
     if (notesRes.data) setNotes(notesRes.data);
@@ -67,7 +90,13 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
         }));
       setTags(mapped);
     }
-  }, [contact]);
+    if (allTagsRes.data) {
+      // Now filter to only account tags
+      const accountTags = allTagsRes.data.filter(tag => tag.account_id === accountId);
+      console.log('Setting allTags:', accountTags);
+      setAllTags(accountTags);
+    }
+  }, [contact, accountId]);
 
   // Load on contact change. setContactData/setTags run inside async
   // Supabase callbacks, not synchronously in the effect body.
@@ -108,17 +137,77 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
       .select()
       .single();
 
-    if (!error && data) {
+    if (error) {
+      console.error('Failed to add note:', error);
+      toast.error(`Falha ao adicionar nota: ${error.message}`);
+    } else if (data) {
       setNotes((prev) => [data, ...prev]);
       setNewNote("");
+      toast.success('Nota adicionada');
     }
     setAddingNote(false);
   }, [contact, newNote, accountId]);
 
+  const deleteNote = useCallback(async (noteId: string) => {
+    if (!contact) return;
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("contact_notes")
+      .delete()
+      .eq("id", noteId);
+
+    if (error) {
+      console.error('Failed to delete note:', error);
+      toast.error('Falha ao excluir nota');
+    } else {
+      setNotes((prev) => prev.filter((n) => n.id !== noteId));
+      toast.success('Nota excluída');
+    }
+  }, [contact]);
+
+  const handleAddTagToContact = useCallback(async (tag: Tag) => {
+    if (!contact || !accountId) return;
+    const supabase = createClient();
+    
+    const { error } = await supabase
+      .from("contact_tags")
+      .insert({
+        contact_id: contact.id,
+        tag_id: tag.id,
+      });
+      
+    if (error) {
+      console.error('Failed to add tag:', error);
+      toast.error('Falha ao adicionar tag');
+    } else {
+      fetchContactData();
+      toast.success('Tag adicionada');
+    }
+  }, [contact, accountId, fetchContactData]);
+
+  const handleRemoveTagFromContact = useCallback(async (tagId: string) => {
+    if (!contact) return;
+    const supabase = createClient();
+    
+    const { error } = await supabase
+      .from("contact_tags")
+      .delete()
+      .eq("tag_id", tagId)
+      .eq("contact_id", contact.id);
+      
+    if (error) {
+      console.error('Failed to remove tag:', error);
+      toast.error('Falha ao remover tag');
+    } else {
+      fetchContactData();
+      toast.success('Tag removida');
+    }
+  }, [contact, fetchContactData]);
+
   if (!contact) {
     return (
       <div className="flex h-full w-70 items-center justify-center border-l border-border bg-card">
-        <p className="text-sm text-muted-foreground">Select a conversation</p>
+        <p className="text-sm text-muted-foreground">Selecione uma conversa</p>
       </div>
     );
   }
@@ -184,23 +273,41 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
               Tags
             </div>
             <div className="mt-2 flex flex-wrap gap-1">
-              {tags.length === 0 ? (
-                <p className="px-1 text-xs text-muted-foreground">No tags</p>
-              ) : (
-                tags.map((tag) => (
-                  <span
+              {tags.map((tag) => (
+                  <button
                     key={tag.contact_tag_id}
-                    className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+                    onClick={() => handleRemoveTagFromContact(tag.id)}
+                    className="rounded-full px-2 py-0.5 text-[10px] font-medium transition-opacity hover:opacity-70"
                     style={{
                       backgroundColor: `${tag.color}20`,
                       color: tag.color,
                     }}
                   >
-                    {tag.name}
-                  </span>
-                ))
-              )}
+                    {tag.name} ✕
+                  </button>
+              ))}
             </div>
+            {/* Add tags dropdown */}
+            {allTags.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {allTags
+                  .filter(
+                    (tag) => !tags.some((contactTag) => contactTag.id === tag.id)
+                  )
+                  .map((tag) => (
+                    <button
+                      key={tag.id}
+                      onClick={() => handleAddTagToContact(tag)}
+                      className="rounded-full border border-border px-2 py-0.5 text-[10px] font-medium text-muted-foreground hover:bg-muted"
+                      style={{
+                        borderColor: `${tag.color}40`,
+                      }}
+                    >
+                      + {tag.name}
+                    </button>
+                  ))}
+              </div>
+            )}
           </div>
 
           {/* Divider */}
@@ -210,11 +317,11 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
           <div>
             <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
               <DollarSign className="h-3 w-3" />
-              Active Deals
+              Negócios Ativos
             </div>
             <div className="mt-2 space-y-2">
               {deals.length === 0 ? (
-                <p className="px-1 text-xs text-muted-foreground">No deals</p>
+                <p className="px-1 text-xs text-muted-foreground">Sem negócios</p>
               ) : (
                 deals.map((deal) => (
                   <div
@@ -254,14 +361,14 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
           <div>
             <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
               <StickyNote className="h-3 w-3" />
-              Notes
+              Notas
             </div>
             <div className="mt-2">
               <div className="flex gap-2">
                 <textarea
                   value={newNote}
                   onChange={(e) => setNewNote(e.target.value)}
-                  placeholder="Add a note..."
+                  placeholder="Adicionar nota..."
                   rows={2}
                   className="flex-1 resize-none rounded-lg border border-border bg-muted px-3 py-2 text-xs text-foreground placeholder-muted-foreground outline-none focus:border-primary/50"
                 />
@@ -279,11 +386,19 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
                 {notes.map((note) => (
                   <div
                     key={note.id}
-                    className="rounded-lg bg-muted px-3 py-2"
+                    className="rounded-lg bg-muted px-3 py-2 group"
                   >
-                    <p className="whitespace-pre-wrap text-xs text-muted-foreground">
-                      {note.note_text}
-                    </p>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="whitespace-pre-wrap text-xs text-muted-foreground flex-1">
+                        {note.note_text}
+                      </p>
+                      <button
+                        onClick={(e) => deleteNote(note.id)}
+                        className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition-opacity cursor-pointer shrink-0"
+                      >
+                        <Trash2 className="size-3" />
+                      </button>
+                    </div>
                     <p className="mt-1 text-[10px] text-muted-foreground">
                       {format(new Date(note.created_at), "MMM d, yyyy HH:mm")}
                     </p>

@@ -3,6 +3,7 @@
 import { use, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Loader2 } from "lucide-react"
+import { useAuth } from "@/hooks/use-auth"
 
 import {
   AutomationBuilder,
@@ -19,6 +20,11 @@ export default function EditAutomationPage({
 }) {
   const { id } = use(params)
   const router = useRouter()
+  const { canEditSettings, profileLoading } = useAuth()
+
+  useEffect(() => {
+    if (!profileLoading && !canEditSettings) router.replace('/dashboard')
+  }, [canEditSettings, profileLoading, router])
   const [initial, setInitial] = useState<BuilderInitial | null>(null)
   const [error, setError] = useState<string | null>(null)
 

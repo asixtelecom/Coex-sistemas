@@ -25,9 +25,8 @@ interface OverviewCounts {
   customFields: number | null;
 }
 
-interface WhatsAppStatus {
+interface ChannelStatus {
   configured: boolean;
-  connected: boolean;
 }
 
 export function SettingsOverview({
@@ -35,18 +34,25 @@ export function SettingsOverview({
 }: {
   onSelect: (section: SettingsSection) => void;
 }) {
-  const { user, profile, accountId, accountRole, defaultCurrency, canManageMembers } =
+  const { user, profile, accountId, accountRole, defaultCurrency, canManageMembers, canEditSettings } =
     useAuth();
   const { mode, theme } = useTheme();
 
   const [counts, setCounts] = useState<OverviewCounts | null>(null);
   const [countsLoading, setCountsLoading] = useState(true);
-  // WhatsApp status is tracked separately: its health check decrypts the
-  // token and pings Meta, which is far slower than the cheap count
-  // queries. Gating it independently keeps a slow/flaky Meta round-trip
-  // from blanking the rest of the landing.
-  const [whatsapp, setWhatsapp] = useState<WhatsAppStatus | null>(null);
+  // Channel statuses
+  const [whatsapp, setWhatsapp] = useState<ChannelStatus | null>(null);
   const [whatsappLoading, setWhatsappLoading] = useState(true);
+  const [instagram, setInstagram] = useState<ChannelStatus | null>(null);
+  const [instagramLoading, setInstagramLoading] = useState(true);
+  const [messenger, setMessenger] = useState<ChannelStatus | null>(null);
+  const [messengerLoading, setMessengerLoading] = useState(true);
+  const [telegram, setTelegram] = useState<ChannelStatus | null>(null);
+  const [telegramLoading, setTelegramLoading] = useState(true);
+  const [webchat, setWebchat] = useState<ChannelStatus | null>(null);
+  const [webchatLoading, setWebchatLoading] = useState(true);
+  const [linkedin, setLinkedin] = useState<ChannelStatus | null>(null);
+  const [linkedinLoading, setLinkedinLoading] = useState(true);
 
   useEffect(() => {
     if (!user || !accountId) return;
@@ -113,23 +119,74 @@ export function SettingsOverview({
       setCountsLoading(false);
     })();
 
-    // WhatsApp connection status — slower, independent.
+    // Check all channel configurations
     (async () => {
       setWhatsappLoading(true);
-      const [row, health] = await Promise.allSettled([
-        supabase
-          .from('whatsapp_config')
-          .select('phone_number_id')
-          .eq('account_id', acctId)
-          .maybeSingle(),
-        fetch('/api/whatsapp/config', { cache: 'no-store' }).then((r) => r.json()),
-      ]);
+      setInstagramLoading(true);
+      setMessengerLoading(true);
+      setTelegramLoading(true);
+      setWebchatLoading(true);
+      setLinkedinLoading(true);
+      
+      const [whatsappRow, instagramRow, messengerRow, telegramRow, webchatRow] = 
+        await Promise.allSettled([
+          supabase
+            .from('whatsapp_config')
+            .select('phone_number_id')
+            .eq('account_id', acctId)
+            .maybeSingle(),
+          supabase
+            .from('instagram_config')
+            .select('page_id')
+            .eq('account_id', acctId)
+            .maybeSingle(),
+          supabase
+            .from('messenger_config')
+            .select('page_id')
+            .eq('account_id', acctId)
+            .maybeSingle(),
+          supabase
+            .from('telegram_config')
+            .select('bot_token')
+            .eq('account_id', acctId)
+            .maybeSingle(),
+          supabase
+            .from('webchat_config')
+            .select('token')
+            .eq('account_id', acctId)
+            .maybeSingle(),
+        ]);
+      
       if (cancelled) return;
+
       setWhatsapp({
-        configured: row.status === 'fulfilled' && !!row.value.data?.phone_number_id,
-        connected: health.status === 'fulfilled' && !!health.value?.connected,
+        configured: whatsappRow.status === 'fulfilled' && !!whatsappRow.value.data?.phone_number_id,
       });
       setWhatsappLoading(false);
+
+      setInstagram({
+        configured: instagramRow.status === 'fulfilled' && !!instagramRow.value.data?.page_id,
+      });
+      setInstagramLoading(false);
+
+      setMessenger({
+        configured: messengerRow.status === 'fulfilled' && !!messengerRow.value.data?.page_id,
+      });
+      setMessengerLoading(false);
+
+      setTelegram({
+        configured: telegramRow.status === 'fulfilled' && !!telegramRow.value.data?.bot_token,
+      });
+      setTelegramLoading(false);
+
+      setWebchat({
+        configured: webchatRow.status === 'fulfilled' && !!webchatRow.value.data?.token,
+      });
+      setWebchatLoading(false);
+
+      // LinkedIn doesn't have a config table yet, so always show "Not set up yet"
+      setLinkedin({ configured: false });
+      setLinkedinLoading(false);
     })();
 
     return () => {
@@ -147,6 +204,18 @@ export function SettingsOverview({
   const themeName = THEMES.find((t) => t.id === theme)?.name ?? theme;
   const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
+  // Helper to get channel subtitle
+  const getChannelSubtitle = (status: ChannelStatus | null) => {
+    if (!status?.configured) {
+      return 'Not set up yet';
+    }
+    return (
+      <>
+        <StatusDot tone="ok" /> Configured
+      </>
+    );
+  };
+
   // Per-tile loading + subtitle. `null` counts render as a graceful
   // fallback so a single failed query never blanks a tile.
   const tiles: {
@@ -157,17 +226,32 @@ export function SettingsOverview({
     {
       section: 'whatsapp',
       loading: whatsappLoading,
-      subtitle: !whatsapp?.configured ? (
-        'Not set up yet'
-      ) : whatsapp.connected ? (
-        <>
-          <StatusDot tone="ok" /> Connected
-        </>
-      ) : (
-        <>
-          <StatusDot tone="muted" /> Needs reconnecting
-        </>
-      ),
+      subtitle: whatsappLoading ? null : getChannelSubtitle(whatsapp),
+    },
+    {
+      section: 'instagram',
+      loading: instagramLoading,
+      subtitle: instagramLoading ? null : getChannelSubtitle(instagram),
+    },
+    {
+      section: 'messenger',
+      loading: messengerLoading,
+      subtitle: messengerLoading ? null : getChannelSubtitle(messenger),
+    },
+    {
+      section: 'telegram',
+      loading: telegramLoading,
+      subtitle: telegramLoading ? null : getChannelSubtitle(telegram),
+    },
+    {
+      section: 'webchat',
+      loading: webchatLoading,
+      subtitle: webchatLoading ? null : getChannelSubtitle(webchat),
+    },
+    {
+      section: 'linkedin',
+      loading: linkedinLoading,
+      subtitle: linkedinLoading ? null : getChannelSubtitle(linkedin),
     },
     {
       section: 'members',
@@ -247,9 +331,14 @@ export function SettingsOverview({
         ) : null}
       </Card>
 
-      {/* Status tiles */}
+      {/* Status tiles — only workspace tiles for admin+ */}
       <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {tiles.map(({ section, loading, subtitle }) => {
+        {tiles
+          .filter((t) => {
+            if (canEditSettings) return true;
+            return t.section === 'appearance';
+          })
+          .map(({ section, loading, subtitle }) => {
           const meta = SECTION_META[section];
           const Icon = meta.icon;
           return (

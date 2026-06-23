@@ -1,7 +1,8 @@
 "use client"
 
-import { useMemo } from "react"
-import { useSearchParams } from "next/navigation"
+import { useEffect, useMemo } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { useAuth } from "@/hooks/use-auth"
 
 import {
   AutomationBuilder,
@@ -12,7 +13,13 @@ import { AUTOMATION_TEMPLATES, type TemplateSlug } from "@/lib/automations/templ
 import type { AutomationStepType, AutomationTriggerType } from "@/types"
 
 export default function NewAutomationPage() {
+  const router = useRouter()
+  const { canEditSettings, profileLoading } = useAuth()
   const params = useSearchParams()
+
+  useEffect(() => {
+    if (!profileLoading && !canEditSettings) router.replace('/dashboard')
+  }, [canEditSettings, profileLoading, router])
   const template = params.get("template") as TemplateSlug | null
 
   const initial: BuilderInitial = useMemo(() => {

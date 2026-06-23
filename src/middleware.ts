@@ -52,8 +52,19 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
+  // Admin subdomain - rewrite to /admin
+  if (request.headers.get('host')?.startsWith('admin.')) {
+    const url = request.nextUrl.clone()
+    if (url.pathname === '/') {
+      url.pathname = '/admin'
+    } else if (!url.pathname.startsWith('/admin')) {
+      url.pathname = '/admin' + url.pathname
+    }
+    return NextResponse.rewrite(url)
+  }
+
   // Protected pages - redirect to login if not authenticated
-  const protectedPaths = ['/dashboard', '/inbox', '/contacts', '/pipelines', '/broadcasts', '/automations', '/settings']
+  const protectedPaths = ['/dashboard', '/inbox', '/contacts', '/pipelines', '/broadcasts', '/automations', '/settings', '/admin']
   if (!user && protectedPaths.some(path => request.nextUrl.pathname.startsWith(path))) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'

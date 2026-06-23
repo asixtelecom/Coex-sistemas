@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, type ReactNode } from 'react';
+import { SettingsGate } from '@/components/settings/settings-gate';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 import { useAuth } from '@/hooks/use-auth';
@@ -11,26 +12,44 @@ import { ProfileForm } from '@/components/settings/profile-form';
 import { SecurityPanel } from '@/components/settings/security-panel';
 import { AppearancePanel } from '@/components/settings/appearance-panel';
 import { WhatsAppConfig } from '@/components/settings/whatsapp-config';
+import { InstagramConfig } from '@/components/settings/instagram-config';
+import { MessengerConfig } from '@/components/settings/messenger-config';
+import { TelegramConfig } from '@/components/settings/telegram-config';
+import { WebchatConfig } from '@/components/settings/webchat-config';
+import { LinkedInConfig } from '@/components/settings/linkedin-config';
+import { EmailConfig } from '@/components/settings/email-config';
 import { TemplateManager } from '@/components/settings/template-manager';
 import { FieldsAndTagsPanel } from '@/components/settings/fields-and-tags-panel';
 import { DealsSettings } from '@/components/settings/deals-settings';
 import { MembersTab } from '@/components/settings/members-tab';
 import {
+  AGENT_SECTIONS,
   resolveSection,
   type SettingsSection,
 } from '@/components/settings/settings-sections';
 
 export default function SettingsPage() {
+  return <SettingsGate><SettingsPageInner /></SettingsGate>;
+}
+
+function SettingsPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { defaultCurrency } = useAuth();
+  const { defaultCurrency, canEditSettings } = useAuth();
   const { mode } = useTheme();
 
   // The URL (`?tab=`) is the single source of truth for the active
   // section — deep-linkable, and it keeps the existing links in the
   // app sidebar/header working. Legacy tab values (tags, custom-fields)
   // resolve onto their new home; unknown/empty → the Overview landing.
-  const section = resolveSection(searchParams.get('tab'));
+  const rawTab = searchParams.get('tab');
+  const resolved = resolveSection(rawTab);
+  // Agents can only access personal sections; redirect to overview
+  // if they try to reach an admin-only tab directly.
+  const section: SettingsSection =
+    !canEditSettings && resolved !== 'overview' && !AGENT_SECTIONS.includes(resolved)
+      ? 'overview'
+      : resolved;
 
   const go = (next: SettingsSection) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -49,16 +68,28 @@ export default function SettingsPage() {
     [mode, defaultCurrency],
   );
 
-  const panel: Record<SettingsSection, ReactNode> = {
+  const adminPanels: Partial<Record<SettingsSection, ReactNode>> = canEditSettings
+    ? {
+        whatsapp: <WhatsAppConfig />,
+        instagram: <InstagramConfig />,
+        messenger: <MessengerConfig />,
+        telegram: <TelegramConfig />,
+        webchat: <WebchatConfig />,
+        linkedin: <LinkedInConfig />,
+        email: <EmailConfig />,
+        templates: <TemplateManager />,
+        fields: <FieldsAndTagsPanel />,
+        deals: <DealsSettings />,
+        members: <MembersTab />,
+      }
+    : {};
+
+  const panel: Partial<Record<SettingsSection, ReactNode>> = {
     overview: <SettingsOverview onSelect={go} />,
     profile: <ProfileForm />,
     security: <SecurityPanel />,
     appearance: <AppearancePanel />,
-    whatsapp: <WhatsAppConfig />,
-    templates: <TemplateManager />,
-    fields: <FieldsAndTagsPanel />,
-    deals: <DealsSettings />,
-    members: <MembersTab />,
+    ...adminPanels,
   };
 
   return (

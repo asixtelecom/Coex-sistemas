@@ -19,6 +19,8 @@ import { Skeleton } from './skeleton'
 interface ActivityFeedProps {
   items: ActivityItem[] | null
   loading: boolean
+  /** When false, only message and contact items are shown. */
+  showAll?: boolean
 }
 
 const PAGE_SIZES = [5, 10, 20, 50] as const
@@ -38,14 +40,15 @@ const KIND_THEME: Record<ActivityKind, KindTheme> = {
   automation: { icon: Zap, badge: 'bg-rose-500/10 text-rose-400' },
 }
 
-export function ActivityFeed({ items, loading }: ActivityFeedProps) {
+export function ActivityFeed({ items, loading, showAll = true }: ActivityFeedProps) {
   // Start at 5 — a quick scan of the most recent events without
   // dominating vertical real estate. User expands explicitly via the
   // footer control when they want deeper history.
   const [pageSize, setPageSize] = useState<PageSize>(5)
 
-  const totalLoaded = items?.length ?? 0
-  const visible = items?.slice(0, pageSize) ?? []
+  const filtered = showAll ? items : items?.filter((it) => it.kind === 'message' || it.kind === 'contact') ?? null
+  const totalLoaded = filtered?.length ?? 0
+  const visible = filtered?.slice(0, pageSize) ?? []
   // A size option is "useful" if picking it would reveal rows the
   // smaller option doesn't already show. With PAGE_SIZES=[5,10,20,50]:
   // "10" is useful only once we've loaded ≥6 items, "20" once ≥11, etc.
@@ -56,12 +59,12 @@ export function ActivityFeed({ items, loading }: ActivityFeedProps) {
   return (
     <section className="rounded-xl border border-border bg-card">
       <header className="flex items-center justify-between border-b border-border px-5 py-4">
-        <h2 className="text-sm font-semibold text-foreground">Recent Activity</h2>
+        <h2 className="text-sm font-semibold text-foreground">Atividade Recente</h2>
         <Link
           href="/inbox"
           className="text-xs font-medium text-primary hover:text-primary/80"
         >
-          View all →
+          Ver tudo →
         </Link>
       </header>
 
@@ -71,12 +74,12 @@ export function ActivityFeed({ items, loading }: ActivityFeedProps) {
             <Skeleton key={i} className="h-10 w-full" />
           ))}
         </div>
-      ) : items.length === 0 ? (
+      ) : (filtered?.length ?? 0) === 0 ? (
         <div className="p-5">
           <EmptyState
             icon={Inbox}
-            title="No activity yet"
-            hint="Activity from messages, deals, broadcasts, and automations will appear here."
+            title="Nenhuma atividade ainda"
+            hint={showAll ? 'Atividade de mensagens, negócios, transmissões e automações aparecerá aqui.' : 'Atividade de mensagens e contatos aparecerá aqui.'}
           />
         </div>
       ) : (
@@ -122,11 +125,11 @@ export function ActivityFeed({ items, loading }: ActivityFeedProps) {
           </ul>
           <footer className="flex items-center justify-between border-t border-border px-5 py-3 text-xs">
             <span className="text-muted-foreground tabular-nums">
-              Showing {visible.length} of {totalLoaded}
+              Mostrando {visible.length} de {totalLoaded}
               {totalLoaded === 50 ? '+' : ''}
             </span>
             <div className="flex items-center gap-1">
-              <span className="mr-1 text-muted-foreground">Show</span>
+              <span className="mr-1 text-muted-foreground">Mostrar</span>
               {PAGE_SIZES.map((size, i) => {
                 const disabled = !isSizeUseful(size, i)
                 return (
@@ -159,9 +162,9 @@ function relativeTime(iso: string): string {
   const then = new Date(iso).getTime()
   if (Number.isNaN(then)) return ''
   const diffSec = Math.round((Date.now() - then) / 1000)
-  if (diffSec < 60) return `${Math.max(1, diffSec)}s ago`
-  if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`
-  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`
-  if (diffSec < 2_592_000) return `${Math.floor(diffSec / 86400)}d ago`
+  if (diffSec < 60) return `${Math.max(1, diffSec)}s atrás`
+  if (diffSec < 3600) return `${Math.floor(diffSec / 60)}min atrás`
+  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h atrás`
+  if (diffSec < 2_592_000) return `${Math.floor(diffSec / 86400)}d atrás`
   return new Date(iso).toLocaleDateString()
 }

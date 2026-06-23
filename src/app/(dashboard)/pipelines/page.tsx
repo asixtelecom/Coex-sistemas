@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { Pipeline, PipelineStage, Deal } from "@/types";
+import type { Pipeline, PipelineStage, Deal, Contact, Profile } from "@/types";
 import { PipelineBoard } from "@/components/pipelines/pipeline-board";
 import { PipelineSettings } from "@/components/pipelines/pipeline-settings";
 import { DealForm } from "@/components/pipelines/deal-form";
@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { GitBranch, Plus, ChevronDown, Settings } from "lucide-react";
+import { GitBranch, Plus, ChevronDown, Settings, UserCircle } from "lucide-react";
 import { toast } from "sonner";
 import { useCan } from "@/hooks/use-can";
 import { useAuth } from "@/hooks/use-auth";
@@ -37,24 +37,26 @@ import { GatedButton } from "@/components/ui/gated-button";
 
 // Spec-defined seed — name and color per the product spec.
 const SPEC_DEFAULT_STAGES = [
-  { name: "New Lead", color: "#3b82f6", position: 0 }, // blue
-  { name: "Qualified", color: "#eab308", position: 1 }, // yellow
-  { name: "Proposal Sent", color: "#f97316", position: 2 }, // orange
-  { name: "Negotiation", color: "#8b5cf6", position: 3 }, // purple
-  { name: "Won", color: "#22c55e", position: 4 }, // green
+  { name: "Novo Lead", color: "#3b82f6", position: 0 },
+  { name: "Qualificado", color: "#eab308", position: 1 },
+  { name: "Proposta Enviada", color: "#f97316", position: 2 },
+  { name: "Negociação", color: "#8b5cf6", position: 3 },
+  { name: "Ganho", color: "#22c55e", position: 4 },
 ];
 
 export default function PipelinesPage() {
   const supabase = createClient();
-  const canEditSettings = useCan("edit-settings");
   const canCreateDeals = useCan("send-messages");
-  const { accountId } = useAuth();
+  const { accountId, user } = useAuth();
 
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [selectedPipelineId, setSelectedPipelineId] = useState<string>("");
   const [stages, setStages] = useState<PipelineStage[]>([]);
   const [deals, setDeals] = useState<Deal[]>([]);
+  const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
+  const [agents, setAgents] = useState<Profile[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
 
   // Dialog / sheet state
   const [newPipelineOpen, setNewPipelineOpen] = useState(false);
@@ -72,16 +74,18 @@ export default function PipelinesPage() {
   const seedAttempted = useRef(false);
 
   const loadPipelines = useCallback(async () => {
+    if (!user) return [];
     const { data, error } = await supabase
       .from("pipelines")
       .select("*")
+      .eq("user_id", user.id)
       .order("created_at");
     if (error) {
       console.error("Failed to load pipelines:", error.message);
       return [];
     }
     return data ?? [];
-  }, [supabase]);
+  }, [supabase, user]);
 
   const loadStages = useCallback(
     async (pipelineId: string) => {
@@ -107,6 +111,14 @@ export default function PipelinesPage() {
     [supabase],
   );
 
+  const loadContacts = useCallback(async () => {
+    const { data } = await supabase
+      .from("contacts")
+      .select("*")
+      .order("created_at", { ascending: false });
+    return (data ?? []) as Contact[];
+  }, [supabase]);
+
   const seedDefaultPipeline = useCallback(async (): Promise<Pipeline | null> => {
     const {
       data: { session },
@@ -118,7 +130,7 @@ export default function PipelinesPage() {
 
     const { data: pipeline, error } = await supabase
       .from("pipelines")
-      .insert({ user_id: user.id, account_id: accountId, name: "Sales Pipeline" })
+      .insert({ user_id: user.id, account_id: accountId, name: "Funil de Vendas" })
       .select()
       .single();
 
@@ -151,8 +163,11 @@ export default function PipelinesPage() {
         if (seeded) list = await loadPipelines();
       }
 
+      const contactsList = await loadContacts();
+
       if (cancelled) return;
       setPipelines(list);
+      setContacts(contactsList);
       if (list.length > 0) {
         setSelectedPipelineId((prev) =>
           prev && list.some((p) => p.id === prev) ? prev : list[0].id,
@@ -165,7 +180,7 @@ export default function PipelinesPage() {
     return () => {
       cancelled = true;
     };
-  }, [loadPipelines, seedDefaultPipeline]);
+  }, [loadPipelines, seedDefaultPipeline, loadContacts]);
 
   // Load stages + deals whenever selected pipeline changes.
   // Clearing on no-selection is a legitimate sync with URL/prop
@@ -272,7 +287,8 @@ export default function PipelinesPage() {
       .single();
 
     if (error || !pipeline) {
-      toast.error("Failed to create pipeline");
+      toast.error(`Failed to create pipeline: ${error?.message || "Unknown error"}`);
+      console.error("Pipeline creation error:", error);
       setCreating(false);
       return;
     }
@@ -323,7 +339,7 @@ export default function PipelinesPage() {
             >
               <GitBranch className="h-4 w-4 text-primary" />
               <span className="font-semibold">
-                {selectedPipeline?.name ?? "Select Pipeline"}
+                {selectedPipeline?.name ?? "Selecionar Funil"}
               </span>
               <ChevronDown className="h-4 w-4 text-muted-foreground" />
             </DropdownMenuTrigger>
@@ -333,7 +349,7 @@ export default function PipelinesPage() {
             >
               {pipelines.length === 0 && (
                 <DropdownMenuItem disabled className="text-muted-foreground">
-                  No pipelines yet
+                  Nenhum funil ainda
                 </DropdownMenuItem>
               )}
               {pipelines.map((p) => (
@@ -357,7 +373,7 @@ export default function PipelinesPage() {
                   className="text-popover-foreground"
                 >
                   <Settings className="mr-2 h-3.5 w-3.5" />
-                  Manage Pipelines
+                  Gerenciar Funis
                 </DropdownMenuItem>
               )}
             </DropdownMenuContent>
@@ -365,26 +381,22 @@ export default function PipelinesPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <GatedButton
+          <Button
             variant="outline"
-            canAct={canEditSettings}
-            gateReason="create pipelines"
             onClick={() => setNewPipelineOpen(true)}
             className="border-border bg-card text-foreground hover:bg-muted"
           >
             <Plus className="mr-1 h-4 w-4" />
-            Add Pipeline
-          </GatedButton>
-          <GatedButton
-            canAct={canCreateDeals}
-            gateReason="create deals"
+            Adicionar Funil
+          </Button>
+          <Button
             disabled={!selectedPipelineId || stages.length === 0}
             onClick={() => handleAddDeal()}
             className="bg-primary text-primary-foreground hover:bg-primary/90"
           >
             <Plus className="mr-1 h-4 w-4" />
-            Add Deal
-          </GatedButton>
+            Adicionar Negócio
+          </Button>
         </div>
       </div>
 
@@ -393,20 +405,18 @@ export default function PipelinesPage() {
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-20">
           <GitBranch className="h-12 w-12 text-muted-foreground" />
           <h3 className="mt-4 text-lg font-medium text-foreground">
-            No pipelines yet
+            Nenhum funil ainda
           </h3>
           <p className="mt-2 text-sm text-muted-foreground">
-            Create a pipeline to start tracking deals
+            Crie um funil para começar a acompanhar negócios
           </p>
-          <GatedButton
-            canAct={canEditSettings}
-            gateReason="create pipelines"
+          <Button
             onClick={() => setNewPipelineOpen(true)}
             className="mt-4 bg-primary text-primary-foreground hover:bg-primary/90"
           >
             <Plus className="mr-1 h-4 w-4" />
-            Create Pipeline
-          </GatedButton>
+            Criar Funil
+          </Button>
         </div>
       ) : (
         <>
@@ -414,6 +424,7 @@ export default function PipelinesPage() {
           <PipelineBoard
             stages={stages}
             deals={deals}
+            contacts={contacts}
             onDealMoved={handleDealMoved}
             onAddDeal={handleAddDeal}
             onEditDeal={handleEditDeal}
@@ -425,21 +436,21 @@ export default function PipelinesPage() {
       <Dialog open={newPipelineOpen} onOpenChange={setNewPipelineOpen}>
         <DialogContent className="sm:max-w-sm bg-popover border-border">
           <DialogHeader>
-            <DialogTitle className="text-popover-foreground">New Pipeline</DialogTitle>
+            <DialogTitle className="text-popover-foreground">Novo Funil</DialogTitle>
           </DialogHeader>
           <div className="py-2">
-            <Label className="text-muted-foreground">Pipeline Name</Label>
+            <Label className="text-muted-foreground">Nome do Funil</Label>
             <Input
               value={newPipelineName}
               onChange={(e) => setNewPipelineName(e.target.value)}
-              placeholder="e.g., Enterprise Sales"
+              placeholder="ex., Vendas Corporativas"
               className="mt-2 bg-muted border-border text-foreground"
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleCreatePipeline();
               }}
             />
             <p className="mt-2 text-xs text-muted-foreground">
-              Default stages (New Lead → Won) will be created automatically.
+              Estágios padrão (Novo Lead → Ganho) serão criados automaticamente.
             </p>
           </div>
           <DialogFooter className="bg-popover/50 border-border">
@@ -448,14 +459,14 @@ export default function PipelinesPage() {
               onClick={() => setNewPipelineOpen(false)}
               className="border-border text-muted-foreground hover:bg-muted"
             >
-              Cancel
+              Cancelar
             </Button>
             <Button
               onClick={handleCreatePipeline}
               disabled={creating || !newPipelineName.trim()}
               className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
-              {creating ? "Creating..." : "Create Pipeline"}
+              {creating ? "Criando..." : "Criar Funil"}
             </Button>
           </DialogFooter>
         </DialogContent>

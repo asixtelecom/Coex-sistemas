@@ -18,6 +18,7 @@ import {
   Square,
   X,
   Loader2,
+  Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GatedButton } from "@/components/ui/gated-button";
@@ -45,6 +46,39 @@ export const CHAT_MEDIA_BUCKET = "chat-media";
 
 /** Meta caps media captions at 1024 chars. Enforced here and in the send route. */
 export const MEDIA_CAPTION_MAX = 1024;
+
+const QUICK_REPLIES = [
+  {
+    id: "orcamento-residencial",
+    label: "Orçamento residencial",
+    text: "Olá! 😊 Obrigado pelo contato! Para fazer um orçamento residencial preciso de algumas informações:\n\n1️⃣ Qual o endereço de coleta (origem)?\n2️⃣ Qual o endereço de entrega (destino)?\n3️⃣ Quantos cômodos aproximadamente?\n4️⃣ Possui móveis que precisam de desmontagem/montagem?\n5️⃣ Tem itens frágeis ou especiais (piano, aquário, etc)?\n6️⃣ Qual a data pretendida para a mudança?\n\nAssim que me passar esses dados, preparo um orçamento personalizado sem compromisso! 🚛✅",
+  },
+  {
+    id: "orcamento-comercial",
+    label: "Orçamento comercial",
+    text: "Olá! Obrigado pelo interesse na MDJS Mudanças para sua empresa! 🏢\n\nPara um orçamento comercial preciso:\n\n1️⃣ Endereço de origem e destino\n2️⃣ Tipo de empresa e quantidade de itens\n3️⃣ Precisa de desmontagem/montagem de móveis?\n4️⃣ Possui equipamentos sensíveis (servidores, vidros, etc)?\n5️⃣ Data prevista\n6️⃣ Horário de funcionamento para realizar a mudança\n\nEnviamos uma proposta detalhada em até 24h! 📋✅",
+  },
+  {
+    id: "orcamento-interestadual",
+    label: "Orçamento interestadual",
+    text: "Olá! A MDJS Mudanças atende em todo o Brasil! 🌎\n\nPara seu orçamento interestadual preciso:\n\n1️⃣ Cidade/Estado de ORIGEM\n2️⃣ Cidade/Estado de DESTINO\n3️⃣ Tipo de mudança (residencial ou comercial)\n4️⃣ Quantidade aproximada de itens\n5️⃣ Data prevista\n\nTrabalhamos com frota própria e monitoramento 24h para sua tranquilidade! 🚛📡",
+  },
+  {
+    id: "empresa-localizacao",
+    label: "Onde fica a empresa",
+    text: "A MDJS Mudanças está localizada em São Paulo/SP e atendemos em todo o Brasil! 📍\n\n✅ Mudanças residenciais e comerciais\n✅ Interestaduais\n✅ Guarda-móveis (Self-Storage)\n✅ Içamentos\n✅ Embalagens de proteção\n\n📞 Contato: (11) 3926-2010\n📧 comercial@mdjsmudancas.com.br\n🌐 mdjsmudancas.com.br\n\nEstamos há mais de 12 anos no mercado! 🏆",
+  },
+  {
+    id: "prazos-mudanca",
+    label: "Prazos e agendamento",
+    text: "Os prazos da MDJS Mudanças variam conforme a complexidade: ⏱️\n\n✅ Mudanças locais (SP): agendamento em até 48h\n✅ Mudanças interestaduais: agendamento conforme rota\n✅ Serviço de guarda-móveis: imediato (consulte disponibilidade)\n\n📌 O prazo total (coleta + transporte + entrega) é definido após a vistoria técnica, garantindo um cronograma realista.\n\nAgende uma vistoria gratuita sem compromisso! 🚛✅",
+  },
+  {
+    id: "servicos-oferecidos",
+    label: "Serviços oferecidos",
+    text: "A MDJS Mudanças oferece soluções completas! 🏠🚚\n\n1️⃣ 🏡 Mudanças Residenciais\n2️⃣ 🏢 Mudanças Comerciais\n3️⃣ 🌎 Mudanças Interestaduais\n4️⃣ 📦 Guarda-móveis (Self-Storage) com monitoramento 24h\n5️⃣ 🪜 Içamento de móveis para andares superiores\n6️⃣ 📋 Desmontagem e montagem de móveis\n7️⃣ 🛡️ Embalagens de proteção (plástico bolha, mantas, caixas reforçadas)\n\n✅ Equipe treinada\n✅ Caminhões baú com monitoramento\n✅ Mais de 12 anos de experiência\n✅ Atendimento em todo Brasil\n\nSolicite seu orçamento gratuito! 📞 (11) 3926-2010",
+  },
+];
 
 /** Hard cap on a single voice recording so it can't blow the upload/
  *  transcode limits — auto-stops the recorder when reached. */
@@ -123,6 +157,8 @@ export function MessageComposer({
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [showQuickReplies, setShowQuickReplies] = useState(false);
+  const [quickFilter, setQuickFilter] = useState("");
 
   // Media attachment state. `draft` holds an uploaded-but-not-yet-sent
   // attachment; `busy` covers the upload/transcode window.
@@ -211,16 +247,47 @@ export function MessageComposer({
         e.preventDefault();
         handleSend();
       }
+      if (e.key === "Escape") {
+        setShowQuickReplies(false);
+      }
     },
     [handleSend]
   );
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      setText(e.target.value);
+      const val = e.target.value;
+      setText(val);
       adjustHeight();
+
+      const slashIdx = val.lastIndexOf("/");
+      if (slashIdx !== -1 && !val.includes(" ", slashIdx)) {
+        const filter = val.slice(slashIdx + 1);
+        setShowQuickReplies(true);
+        setQuickFilter(filter);
+      } else {
+        setShowQuickReplies(false);
+        setQuickFilter("");
+      }
     },
     [adjustHeight]
+  );
+
+  const filteredQuickReplies = QUICK_REPLIES.filter((qr) =>
+    qr.label.toLowerCase().includes(quickFilter.toLowerCase())
+  );
+
+  const handleSelectQuickReply = useCallback(
+    (replyText: string) => {
+      const slashIdx = text.lastIndexOf("/");
+      const prefix = slashIdx !== -1 ? text.slice(0, slashIdx) : "";
+      setText(prefix + replyText);
+      setShowQuickReplies(false);
+      setQuickFilter("");
+      adjustHeight();
+      textareaRef.current?.focus();
+    },
+    [text, adjustHeight]
   );
 
   // Upload a captured file to chat-media and stage it as a draft.
@@ -391,7 +458,7 @@ export function MessageComposer({
       {sessionExpired && (
         <div className="mb-2 flex items-center justify-between rounded-lg bg-amber-500/10 px-3 py-2">
           <p className="text-xs text-amber-400">
-            24-hour session expired. Use a template to re-engage.
+            Sessão de 24 horas expirada. Use um template para reengajar.
           </p>
           <Button
             variant="ghost"
@@ -400,7 +467,7 @@ export function MessageComposer({
             onClick={onOpenTemplates}
           >
             <LayoutTemplate className="mr-1 h-3 w-3" />
-            Templates
+            Modelos
           </Button>
         </div>
       )}
@@ -459,13 +526,13 @@ export function MessageComposer({
             onClick={cancelRecording}
             className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-card hover:text-foreground"
           >
-            Cancel
+            Cancelar
           </button>
           <Button
             size="sm"
             onClick={stopRecording}
             className="h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90"
-            title="Stop and attach"
+            title="Parar e anexar"
           >
             <Square className="h-4 w-4" />
           </Button>
@@ -478,10 +545,10 @@ export function MessageComposer({
               disabled={inputsDisabled || busy}
               title={
                 readOnly
-                  ? "Read-only — your role can't send messages"
+                  ? "Somente leitura — sua função não pode enviar mensagens"
                   : inputsDisabled
                     ? undefined
-                    : "Attach media"
+                    : "Anexar mídia"
               }
               className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md p-0 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -494,19 +561,19 @@ export function MessageComposer({
             <DropdownMenuContent align="start" className="border-border bg-popover">
               <DropdownMenuItem onClick={() => imageInputRef.current?.click()}>
                 <ImageIcon className="mr-2 h-4 w-4" />
-                Photo
+                Foto
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => videoInputRef.current?.click()}>
                 <Video className="mr-2 h-4 w-4" />
-                Video
+                Vídeo
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => documentInputRef.current?.click()}>
                 <FileText className="mr-2 h-4 w-4" />
-                Document
+                Documento
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => void startRecording()}>
                 <Mic className="mr-2 h-4 w-4" />
-                Voice note
+                Nota de voz
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -516,36 +583,58 @@ export function MessageComposer({
             size="sm"
             canAct={!readOnly}
             gateReason="send messages"
-            title={readOnly ? undefined : "Send template"}
+            title={readOnly ? undefined : "Enviar modelo"}
             className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-foreground"
             onClick={onOpenTemplates}
           >
             <LayoutTemplate className="h-4 w-4" />
           </GatedButton>
 
-          <textarea
-            ref={textareaRef}
-            value={text}
-            onChange={handleChange}
-            onKeyDown={handleKeyDown}
-            placeholder={
-              readOnly
-                ? "Read-only — viewers can browse but not reply"
-                : sessionExpired
-                  ? "Session expired - use a template"
-                  : "Type a message... (Shift+Enter for new line)"
-            }
-            disabled={sessionExpired || readOnly}
-            rows={1}
-            // Textarea keeps its own inline title — the GatedButton
-            // wrapping pattern doesn't apply to non-button inputs.
-            // The placeholder text also surfaces the read-only state.
-            title={readOnly ? "Read-only — your role can't send messages" : undefined}
-            className={cn(
-              "flex-1 resize-none rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50",
-              (sessionExpired || readOnly) && "cursor-not-allowed opacity-50"
+          <div className="relative flex-1">
+            {showQuickReplies && filteredQuickReplies.length > 0 && (
+              <div className="absolute bottom-full left-0 right-0 mb-1 rounded-lg border border-border bg-popover shadow-lg">
+                <div className="flex items-center gap-1.5 border-b border-border px-3 py-1.5">
+                  <Zap className="h-3 w-3 text-primary" />
+                  <span className="text-[11px] font-medium text-foreground">Respostas rápidas</span>
+                </div>
+                <div className="max-h-48 overflow-y-auto">
+                  {filteredQuickReplies.map((qr) => (
+                    <button
+                      key={qr.id}
+                      type="button"
+                      onClick={() => handleSelectQuickReply(qr.text)}
+                      className="w-full px-3 py-2 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors border-b border-border/50 last:border-0"
+                    >
+                      <span className="font-medium text-foreground">{qr.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
             )}
-          />
+            <textarea
+              ref={textareaRef}
+              value={text}
+              onChange={handleChange}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                readOnly
+                  ? "Somente leitura — visualizadores podem ver mas não responder"
+                  : sessionExpired
+                    ? "Sessão expirada - use um modelo"
+                    : "Digite uma mensagem... (Shift+Enter para nova linha)"
+              }
+              disabled={sessionExpired || readOnly}
+              rows={1}
+              // Textarea keeps its own inline title — the GatedButton
+              // wrapping pattern doesn't apply to non-button inputs.
+              // The placeholder text also surfaces the read-only state.
+              title={readOnly ? "Somente leitura — sua função não pode enviar mensagens" : undefined}
+              className={cn(
+                "w-full resize-none rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50",
+                (sessionExpired || readOnly) && "cursor-not-allowed opacity-50"
+              )}
+            />
+          </div>
 
           <GatedButton
             size="sm"
@@ -565,7 +654,7 @@ export function MessageComposer({
           under the textarea left edge. */}
       {!draft && !recording && (
         <p className="mt-1 pl-[5.5rem] text-[10px] text-muted-foreground">
-          Type &apos;/&apos; for quick replies
+          Digite &apos;/&apos; para respostas rápidas
         </p>
       )}
     </div>
@@ -621,7 +710,7 @@ function MediaDraftPreview({
         <button
           type="button"
           onClick={onDiscard}
-          aria-label="Remove attachment"
+          aria-label="Remover anexo"
           className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
         >
           <X className="h-4 w-4" />
@@ -640,7 +729,7 @@ function MediaDraftPreview({
                 onSend();
               }
             }}
-            placeholder="Add a caption…"
+            placeholder="Adicionar legenda…"
             className="flex-1 rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50"
           />
         )}

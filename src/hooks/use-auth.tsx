@@ -13,6 +13,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
 import { DEFAULT_CURRENCY } from "@/lib/currency";
 import {
+  canEditOwnProfile as canEditOwnProfileFor,
   canEditSettings as canEditSettingsFor,
   canManageMembers as canManageMembersFor,
   canSendMessages as canSendMessagesFor,
@@ -34,6 +35,7 @@ interface Profile {
   beta_features: string[];
   account_id: string | null;
   account_role: AccountRole | null;
+  system_role: string | null;
 }
 
 interface AccountSummary {
@@ -99,6 +101,8 @@ interface AuthContextValue {
   canManageMembers: boolean;
   /** True if the caller can edit account-wide settings (admin+). */
   canEditSettings: boolean;
+  /** True if the caller can edit own profile (agent+). */
+  canEditOwnProfile: boolean;
   /** True if the caller can send messages and edit operational data (agent+). */
   canSendMessages: boolean;
 }
@@ -136,7 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // missing account collapses to null rather than a half-
           // populated row (shouldn't happen post-017 NOT NULL, but
           // belt-and-braces against forks running older schemas).
-          "id, full_name, email, avatar_url, role, beta_features, account_id, account_role, account:accounts!inner(id, name, default_currency)",
+          "id, full_name, email, avatar_url, role, beta_features, account_id, account_role, system_role, account:accounts!inner(id, name, default_currency)",
         )
         .eq("user_id", userId)
         .maybeSingle();
@@ -196,6 +200,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           beta_features: data.beta_features ?? [],
           account_id: data.account_id ?? null,
           account_role: accountRole,
+          system_role: data.system_role,
         });
         setAccount(accountRow);
       }
@@ -300,6 +305,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const role = profile?.account_role ?? null;
     return {
       accountRole: role,
+      isSystemAdmin: profile?.system_role === "super_admin",
       accountId: profile?.account_id ?? null,
       isOwner: role === "owner",
       isAdmin: role === "admin",
@@ -307,6 +313,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isViewer: role === "viewer",
       canManageMembers: role ? canManageMembersFor(role) : false,
       canEditSettings: role ? canEditSettingsFor(role) : false,
+      canEditOwnProfile: role ? canEditOwnProfileFor(role) : false,
       canSendMessages: role ? canSendMessagesFor(role) : false,
     };
   }, [profile?.account_role, profile?.account_id]);
@@ -360,6 +367,7 @@ export function useAuth(): AuthContextValue {
       isViewer: false,
       canManageMembers: false,
       canEditSettings: false,
+      canEditOwnProfile: false,
       canSendMessages: false,
     };
   }

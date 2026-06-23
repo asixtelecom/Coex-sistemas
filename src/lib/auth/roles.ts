@@ -107,3 +107,13 @@ export function canDeleteAccount(role: AccountRole): boolean {
 export function canTransferOwnership(role: AccountRole): boolean {
   return role === "owner";
 }
+
+/**
+ * Agent+: edit own profile (name, avatar, email, password,
+ * appearance). Separate from `canEditSettings` so agents can
+ * reach the profile/security panels in Settings without being
+ * able to touch workspace- or account-level config.
+ */
+export function canEditOwnProfile(role: AccountRole): boolean {
+  return hasMinRole(role, "agent");
+}

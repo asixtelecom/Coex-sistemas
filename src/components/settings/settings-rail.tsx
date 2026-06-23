@@ -3,7 +3,9 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/hooks/use-auth';
 import {
+  AGENT_SECTIONS,
   RAIL_GROUPS,
   SECTION_META,
   SETTINGS_SECTIONS,
@@ -30,6 +32,25 @@ export function SettingsRail({
   onSelect: (section: SettingsSection) => void;
   hints?: Partial<Record<SettingsSection, ReactNode>>;
 }) {
+  const { canEditSettings } = useAuth();
+
+  // Non‑admin users (agents/viewers) only see their personal sections.
+  // Defaulting to `true` ensures the admin view is unchanged when the
+  // hook hasn't settled yet (avoids a flash of a sparse rail).
+  const visibleSections: readonly SettingsSection[] = canEditSettings
+    ? SETTINGS_SECTIONS
+    : AGENT_SECTIONS;
+
+  // For the rail groups, we keep the same structure but only include
+  // items from visibleSections.
+  const visibleGroups = RAIL_GROUPS.map(({ label, group }) => ({
+    label,
+    group,
+    items: SETTINGS_SECTIONS.filter(
+      (s) => SECTION_META[s].group === group && visibleSections.includes(s),
+    ),
+  })).filter((g) => g.items.length > 0);
+
   const activeRef = useRef<HTMLButtonElement>(null);
 
   // When horizontal (mobile), keep the active chip in view. On desktop
@@ -46,17 +67,14 @@ export function SettingsRail({
 
   return (
     <nav
-      aria-label="Settings sections"
+      aria-label="Seções de configurações"
       className={cn(
         'flex gap-1 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
         'border-b border-border',
         'lg:sticky lg:top-0 lg:flex-col lg:overflow-visible lg:border-b-0 lg:pb-0',
       )}
     >
-      {RAIL_GROUPS.map(({ label, group }) => {
-        const items = SETTINGS_SECTIONS.filter(
-          (s) => SECTION_META[s].group === group,
-        );
+      {visibleGroups.map(({ label, group, items }) => {
         return (
           <div
             key={group}

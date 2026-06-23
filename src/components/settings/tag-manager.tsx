@@ -56,21 +56,41 @@ export function TagManager() {
 
   useEffect(() => {
     if (authLoading) return;
-    if (!user) {
+    if (!accountId) {
       setLoading(false);
       return;
     }
-    fetchTags(user.id);
+    fetchTags(accountId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, user?.id]);
+  }, [authLoading, accountId]);
 
-  async function fetchTags(userId: string) {
+  async function fetchTags(accountId: string) {
     try {
       setLoading(true);
+      // First get all tags (to find ones without account_id)
+      const { data: allTagsData, error: allTagsError } = await supabase
+        .from('tags')
+        .select('*')
+        .order('created_at', { ascending: true });
+
+      if (allTagsError) throw allTagsError;
+
+      // Fix any tags that don't have account_id
+      if (allTagsData && allTagsData.length > 0) {
+        const tagsWithoutAccountId = allTagsData.filter(tag => !tag.account_id);
+        for (const tag of tagsWithoutAccountId) {
+          await supabase
+            .from('tags')
+            .update({ account_id: accountId })
+            .eq('id', tag.id);
+        }
+      }
+
+      // Then get tags with account_id
       const { data, error } = await supabase
         .from('tags')
         .select('*')
-        .eq('user_id', userId)
+        .eq('account_id', accountId)
         .order('created_at', { ascending: true });
 
       if (error) throw error;
@@ -110,7 +130,7 @@ export function TagManager() {
       toast.success('Tag created');
       setNewTagName('');
       setSelectedColor(PRESET_COLORS[3].value);
-      await fetchTags(user.id);
+      await fetchTags(accountId);
     } catch (err) {
       console.error('Create error:', err);
       toast.error('Failed to create tag');

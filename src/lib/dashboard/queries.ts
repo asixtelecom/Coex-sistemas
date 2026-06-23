@@ -265,6 +265,30 @@ export async function loadResponseTime(db: DB): Promise<ResponseTimeSummary> {
 
 // --- 5. Activity feed --------------------------------------------------
 
+export async function loadConversationsByChannel(db: DB): Promise<{ type: string; count: number }[]> {
+  const { data: conversations, error } = await db
+    .from('conversations')
+    .select('id, channel:channels(type)');
+  
+  if (error) throw error;
+
+  const counts = new Map<string, number>();
+  counts.set('whatsapp', 0);
+  counts.set('instagram', 0);
+  counts.set('messenger', 0);
+  counts.set('telegram', 0);
+  counts.set('webchat', 0);
+  counts.set('linkedin', 0);
+
+  for (const conv of (conversations as any[]) ?? []) {
+    const channel = Array.isArray(conv.channel) ? conv.channel[0] : conv.channel;
+    const type = channel?.type || 'whatsapp';
+    counts.set(type, (counts.get(type) || 0) + 1);
+  }
+
+  return Array.from(counts.entries()).map(([type, count]) => ({ type, count }));
+}
+
 export async function loadActivity(db: DB, limit = 20): Promise<ActivityItem[]> {
   // Pull ~10 from each source (plenty of headroom after merge-sort),
   // then interleave by timestamp. The individual per-table limits

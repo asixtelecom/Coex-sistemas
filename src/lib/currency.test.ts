@@ -6,11 +6,15 @@ import {
   formatCurrencyShort,
 } from "./currency";
 
+function stripCurrencySeparators(value: string): string {
+  return value.replace(/[\s\u00a0\u202f.,]/g, "");
+}
+
 describe("formatCurrency", () => {
   it("formats whole amounts with no minor units", () => {
     // Use a non-breaking-space-tolerant check: Intl may insert NBSP.
     const out = formatCurrency(1234, "USD");
-    expect(out).toContain("1,234");
+    expect(out).toContain("1.234");
     expect(out).not.toContain(".00");
   });
 
@@ -30,13 +34,13 @@ describe("formatCurrency", () => {
     // Intl is lenient here — it uses the code as the symbol.
     const out = formatCurrency(1234, "ZZZ");
     expect(out).toContain("ZZZ");
-    expect(out).toContain("1,234");
+    expect(out).toContain("1.234");
   });
 
   it("never throws on a structurally invalid code (no DB CHECK on deals.currency)", () => {
     for (const bad of ["United States", "US", "USDD", "12", "u$d"]) {
       expect(() => formatCurrency(1234, bad)).not.toThrow();
-      expect(formatCurrency(1234, bad)).toContain("1,234");
+      expect(formatCurrency(1234, bad)).toContain("1.234");
     }
   });
 
@@ -44,6 +48,11 @@ describe("formatCurrency", () => {
     for (const c of CURRENCIES) {
       expect(() => formatCurrency(1000, c.code)).not.toThrow();
     }
+  });
+
+  it("places the BRL symbol before the amount (pt-BR locale)", () => {
+    const out = formatCurrency(13_099, "BRL");
+    expect(stripCurrencySeparators(out)).toMatch(/^R\$13099$/);
   });
 });
 

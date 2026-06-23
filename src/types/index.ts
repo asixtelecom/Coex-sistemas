@@ -47,6 +47,9 @@ export interface Account {
   name: string;
   /** auth.users.id of the immutable owner. */
   owner_user_id: string;
+  ig_id?: string;
+  messenger_psid?: string;
+  telegram_chat_id?: string;
   created_at: string;
   updated_at: string;
 }
@@ -147,12 +150,15 @@ export type ConversationStatus = 'open' | 'pending' | 'closed';
 export interface Conversation {
   id: string;
   user_id: string;
+  account_id: string;
   contact_id: string;
   status: ConversationStatus;
   assigned_agent_id?: string;
   last_message_text?: string;
   last_message_at?: string;
   unread_count: number;
+  channel_id?: string;
+  channel?: Channel;
   created_at: string;
   updated_at: string;
   contact?: Contact;
@@ -176,6 +182,7 @@ export interface Message {
   conversation_id: string;
   sender_type: SenderType;
   sender_id?: string;
+  channel_id?: string;
   content_type: ContentType;
   content_text?: string;
   media_url?: string;
@@ -224,6 +231,19 @@ export interface WhatsAppConfig {
   subscribed_apps_at?: string;
   /** Last error from /register; cleared on success. */
   last_registration_error?: string;
+}
+export type ChannelType = 'whatsapp' | 'instagram' | 'messenger' | 'telegram' | 'webchat' | 'linkedin';
+
+export interface Channel {
+  id: string;
+  account_id: string;
+  type: ChannelType;
+  name: string;
+  config: Record<string, unknown>;
+  status: 'connected' | 'disconnected';
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 // Raw Meta status enum. We persist this verbatim from Meta (sync + webhook)
@@ -309,6 +329,9 @@ export interface Deal {
   currency?: string;
   notes?: string;
   expected_close_date?: string;
+  end_date?: string;
+  origin_address?: string;
+  destination_address?: string;
   status?: DealStatus;
   created_at: string;
   updated_at?: string;
@@ -542,3 +565,47 @@ export interface AutomationLog {
   created_at: string;
   contact?: Contact;
 }
+
+// ============================================================
+// Internal Chat (migration 033)
+// ============================================================
+
+export interface InternalConversation {
+  id: string;
+  account_id: string;
+  created_at: string;
+  updated_at: string;
+  participants?: InternalParticipant[];
+  last_message?: InternalMessage;
+  other_participant?: InternalParticipant;
+}
+
+export interface InternalParticipant {
+  id: string;
+  conversation_id: string;
+  user_id: string;
+  last_read_at: string;
+  created_at: string;
+  profile?: Profile;
+  presence?: UserPresence;
+}
+
+export interface InternalMessage {
+  id: string;
+  conversation_id: string;
+  sender_id: string;
+  content: string;
+  media_url?: string;
+  media_type?: string;
+  media_name?: string;
+  media_size?: number;
+  created_at: string;
+  sender?: Profile;
+}
+
+export interface UserPresence {
+  user_id: string;
+  last_seen_at: string;
+  status: 'online' | 'offline' | 'away';
+}
+

@@ -1,0 +1,12 @@
+.mailbox-mailboxes-dropdown .active {
+    color: #898fa9;
+    background-color: #1b1e25;
+}
+
+.mailbox-templates-dropdown-tinymce {
+    background-color: #252932 !important;
+}
+
+.mailbox-templates-dropdown-tinymce li{
+    color: #fff !important;
+}

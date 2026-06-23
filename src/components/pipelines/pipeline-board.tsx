@@ -14,16 +14,18 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import type { Deal, PipelineStage } from "@/types";
+import type { Deal, PipelineStage, Contact } from "@/types";
 import { DealCard } from "./deal-card";
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Plus, Search, X } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { formatCurrency } from "@/lib/currency";
 
 interface PipelineBoardProps {
   stages: PipelineStage[];
   deals: Deal[];
+  contacts: Contact[];
   onDealMoved: (dealId: string, newStageId: string) => void;
   onAddDeal: (stageId: string) => void;
   onEditDeal: (deal: Deal) => void;
@@ -32,12 +34,15 @@ interface PipelineBoardProps {
 export function PipelineBoard({
   stages,
   deals,
+  contacts,
   onDealMoved,
   onAddDeal,
   onEditDeal,
 }: PipelineBoardProps) {
   const { defaultCurrency } = useAuth();
   const [activeDealId, setActiveDealId] = useState<string | null>(null);
+  const [searchQueries, setSearchQueries] = useState<Record<string, string>>({});
+  const [searchingStageId, setSearchingStageId] = useState<string | null>(null);
 
   const sortedStages = useMemo(
     () => [...stages].sort((a, b) => a.position - b.position),
@@ -47,12 +52,41 @@ export function PipelineBoard({
   const dealsByStage = useMemo(() => {
     const map = new Map<string, Deal[]>();
     for (const stage of sortedStages) map.set(stage.id, []);
+    
+    // Create a map to quickly find contact by id
+    const contactById = new Map<string, Contact>();
+    for (const contact of contacts) {
+      contactById.set(contact.id, contact);
+    }
+
     for (const deal of deals) {
       const bucket = map.get(deal.stage_id);
-      if (bucket) bucket.push(deal);
+      if (!bucket) continue;
+
+      const query = searchQueries[deal.stage_id] || "";
+      if (query.trim() === "") {
+        bucket.push(deal);
+        continue;
+      }
+
+      const lowerQuery = query.toLowerCase();
+      const contact = deal.contact_id ? contactById.get(deal.contact_id) : null;
+      
+      // Search by deal title
+      const titleMatches = deal.title.toLowerCase().includes(lowerQuery);
+      // Search by contact name
+      const nameMatches = contact?.name?.toLowerCase().includes(lowerQuery);
+      // Search by contact phone
+      const phoneMatches = contact?.phone?.toLowerCase().includes(lowerQuery);
+      // Search by deal value (as string)
+      const valueMatches = String(deal.value || "").includes(lowerQuery);
+
+      if (titleMatches || nameMatches || phoneMatches || valueMatches) {
+        bucket.push(deal);
+      }
     }
     return map;
-  }, [sortedStages, deals]);
+  }, [sortedStages, deals, contacts, searchQueries]);
 
   const sensors = useSensors(
     // 5px activation distance avoids clicks being interpreted as drags.
@@ -118,6 +152,20 @@ export function PipelineBoard({
               currency={defaultCurrency}
               onAddDeal={onAddDeal}
               onEditDeal={onEditDeal}
+              searchQuery={searchQueries[stage.id] || ""}
+              onSearchChange={(q) => setSearchQueries({ ...searchQueries, [stage.id]: q })}
+              isSearching={searchingStageId === stage.id}
+              onToggleSearch={() => {
+                setSearchingStageId(searchingStageId === stage.id ? null : stage.id);
+                if (searchingStageId !== stage.id) {
+                  // Focus the input when opening
+                  setTimeout(() => {
+                    const input = document.getElementById(`search-${stage.id}`);
+                    input?.focus();
+                  }, 0);
+                }
+              }}
+              onClearSearch={() => setSearchQueries({ ...searchQueries, [stage.id]: "" })}
             />
           );
         })}
@@ -192,6 +240,11 @@ function StageColumn({
   currency,
   onAddDeal,
   onEditDeal,
+  searchQuery,
+  onSearchChange,
+  isSearching,
+  onToggleSearch,
+  onClearSearch,
 }: {
   stage: PipelineStage;
   deals: Deal[];
@@ -199,6 +252,11 @@ function StageColumn({
   currency: string;
   onAddDeal: (stageId: string) => void;
   onEditDeal: (deal: Deal) => void;
+  searchQuery: string;
+  onSearchChange: (q: string) => void;
+  isSearching: boolean;
+  onToggleSearch: () => void;
+  onClearSearch: () => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
 
@@ -219,13 +277,46 @@ function StageColumn({
         <h3 className="truncate text-sm font-semibold text-foreground">
           {stage.name}
         </h3>
-        <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-          {deals.length}
-        </span>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onToggleSearch}
+            className="h-6 w-6 inline-flex items-center justify-center rounded hover:bg-muted"
+          >
+            <Search className="h-3.5 w-3.5 text-muted-foreground" />
+          </button>
+          <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+            {deals.length}
+          </span>
+        </div>
       </div>
       <p className="text-xs text-muted-foreground">
         {formatCurrency(totalValue, currency)}
       </p>
+      
+      {isSearching && (
+        <div className="mt-2 mb-2">
+          <div className="relative">
+            <Search className="absolute left-2 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              id={`search-${stage.id}`}
+              placeholder="Filtrar leads..."
+              value={searchQuery}
+              onChange={(e) => onSearchChange(e.target.value)}
+              className="h-8 pl-8 pr-8 text-xs"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={onClearSearch}
+                className="absolute right-2 top-2.5 h-3.5 w-3.5 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       <div
         ref={setNodeRef}

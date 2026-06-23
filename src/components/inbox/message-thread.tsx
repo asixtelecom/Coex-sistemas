@@ -12,6 +12,9 @@ import type {
   ConversationStatus,
   MessageTemplate,
   Profile,
+  Pipeline,
+  PipelineStage,
+  Deal,
 } from "@/types";
 import {
   MessageSquare,
@@ -23,6 +26,8 @@ import {
   RefreshCw,
   PanelRightOpen,
   PanelRightClose,
+  GitBranch,
+  Plus,
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { Badge } from "@/components/ui/badge";
@@ -44,6 +49,7 @@ import {
 import { deleteAccountMedia } from "@/lib/storage/upload-media";
 import { TemplatePicker } from "./template-picker";
 import { buildReplyPreview } from "./reply-quote";
+import { DealCreateDialog, type DealFormData } from "./deal-create-dialog";
 import { toast } from "sonner";
 
 interface ReplyDraft {
@@ -107,8 +113,8 @@ interface MessageThreadProps {
 
 function formatDateSeparator(dateStr: string): string {
   const date = new Date(dateStr);
-  if (isToday(date)) return "Today";
-  if (isYesterday(date)) return "Yesterday";
+  if (isToday(date)) return "Hoje";
+  if (isYesterday(date)) return "Ontem";
   return format(date, "MMMM d, yyyy");
 }
 
@@ -130,9 +136,9 @@ function groupMessagesByDate(messages: Message[]) {
 }
 
 const STATUS_OPTIONS: { label: string; value: ConversationStatus; color: string }[] = [
-  { label: "Open", value: "open", color: "text-primary" },
-  { label: "Pending", value: "pending", color: "text-amber-400" },
-  { label: "Closed", value: "closed", color: "text-muted-foreground" },
+  { label: "Aberto", value: "open", color: "text-primary" },
+  { label: "Pendente", value: "pending", color: "text-amber-400" },
+  { label: "Fechado", value: "closed", color: "text-muted-foreground" },
 ];
 
 /**
@@ -168,6 +174,12 @@ export function MessageThread({
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [reactions, setReactions] = useState<MessageReaction[]>([]);
+  const [pipelines, setPipelines] = useState<Pipeline[]>([]);
+  const [stages, setStages] = useState<PipelineStage[]>([]);
+  const [deals, setDeals] = useState<Deal[]>([]);
+  const [currentDeal, setCurrentDeal] = useState<Deal | null>(null);
+  const [dealDialogOpen, setDealDialogOpen] = useState(false);
+  const [pendingStageId, setPendingStageId] = useState<string | null>(null);
   // Purely visual spin state for the manual-refresh button. The actual
   // refetch is fire-and-forget through `onRefresh` (which bumps the
   // parent's resyncToken); the 700ms spin is just feedback so the click
@@ -215,6 +227,124 @@ export function MessageThread({
     };
   }, []);
 
+  // Load pipelines and stages
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    const supabase = createClient();
+    (async () => {
+      // Load pipelines filtered by user id
+      let { data: pipelineData, error: pipelineError } = await supabase
+        .from("pipelines")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at");
+
+      if (cancelled) return;
+      if (pipelineError) {
+        console.error("Failed to load pipelines:", pipelineError);
+        return;
+      }
+      let pipelinesList = (pipelineData as Pipeline[]) ?? [];
+
+      // If no pipelines exist, create a default one for this user
+      if (pipelinesList.length === 0) {
+        const { data: newPipeline, error: createPipelineError } = await supabase
+          .from("pipelines")
+          .insert({
+            user_id: user.id,
+            name: "Funil de Vendas",
+          })
+          .select()
+          .single();
+
+        if (cancelled) return;
+        if (createPipelineError) {
+          console.error("Failed to create default pipeline:", createPipelineError);
+          return;
+        }
+
+        // Create default stages for this new pipeline
+        const defaultStages = [
+          { name: "Contato", color: "#3b82f6", position: 0 },
+          { name: "Qualificação", color: "#8b5cf6", position: 1 },
+          { name: "Proposta", color: "#f59e0b", position: 2 },
+          { name: "Negociação", color: "#ef4444", position: 3 },
+          { name: "Fechamento", color: "#10b981", position: 4 },
+        ];
+
+        const stagesToInsert = defaultStages.map(stage => ({
+          ...stage,
+          pipeline_id: newPipeline.id,
+        }));
+
+        const { error: createStagesError } = await supabase
+          .from("pipeline_stages")
+          .insert(stagesToInsert);
+
+        if (cancelled) return;
+        if (createStagesError) {
+          console.error("Failed to create default stages:", createStagesError);
+          return;
+        }
+
+        pipelinesList = [newPipeline];
+      }
+
+      setPipelines(pipelinesList);
+
+      // Load stages from the first pipeline if available
+      if (pipelinesList.length > 0) {
+        const { data: stageData, error: stageError } = await supabase
+          .from("pipeline_stages")
+          .select("*")
+          .eq("pipeline_id", pipelinesList[0].id)
+          .order("position");
+        if (cancelled) return;
+        if (stageError) {
+          console.error("Failed to load stages:", stageError);
+          return;
+        }
+        setStages((stageData as PipelineStage[]) ?? []);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  // Load deals linked to this conversation, or all deals for this contact
+  useEffect(() => {
+    if (!conversation) return;
+    let cancelled = false;
+    const supabase = createClient();
+    (async () => {
+      // First, try to find a deal that's already linked to this conversation
+      const { data: linkedDeal } = await supabase
+        .from("deals")
+        .select("*, contact:contacts(*), assignee:profiles!deals_assigned_to_fkey(*)")
+        .eq("conversation_id", conversation.id)
+        .maybeSingle();
+
+      if (cancelled) return;
+      setCurrentDeal((linkedDeal as Deal) ?? null);
+
+      // Then, load all deals for this contact (in case we want to link one)
+      const { data: contactDeals } = await supabase
+        .from("deals")
+        .select("*, contact:contacts(*), assignee:profiles!deals_assigned_to_fkey(*)")
+        .eq("contact_id", conversation.contact_id)
+        .order("created_at", { ascending: false });
+
+      if (cancelled) return;
+      setDeals((contactDeals as Deal[]) ?? []);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [conversation]);
+
   // 24-hour session timer
   const sessionInfo = useMemo(() => {
     if (!messages.length) return { expired: false, remaining: "" };
@@ -224,20 +354,20 @@ export function MessageThread({
       .reverse()
       .find((m) => m.sender_type === "customer");
 
-    if (!lastCustomerMsg) return { expired: true, remaining: "No customer messages" };
+    if (!lastCustomerMsg) return { expired: true, remaining: "Nenhuma mensagem do cliente" };
 
     const hoursSince = differenceInHours(new Date(), new Date(lastCustomerMsg.created_at));
     const expired = hoursSince >= 24;
 
     if (expired) {
-      return { expired: true, remaining: "Expired" };
+      return { expired: true, remaining: "Expirado" };
     }
 
     const hoursLeft = 24 - hoursSince;
     const remaining =
       hoursLeft >= 1
-        ? `${Math.floor(hoursLeft)}h remaining`
-        : `${Math.floor(hoursLeft * 60)}m remaining`;
+        ? `${Math.floor(hoursLeft)}h restantes`
+        : `${Math.floor(hoursLeft * 60)}min restantes`;
 
     return { expired, remaining };
   }, [messages]);
@@ -455,15 +585,17 @@ export function MessageThread({
       setReplyTo(null);
 
       try {
-        const res = await fetch("/api/whatsapp/send", {
+        const isWebchat = conversation.channel?.type === "webchat";
+        const endpoint = isWebchat ? "/api/webchat/send" : "/api/whatsapp/send";
+        
+        const body = isWebchat 
+          ? { conversation_id: conversation.id, content_text: text, reply_to_message_id: replyToId }
+          : { conversation_id: conversation.id, message_type: "text", content_text: text, reply_to_message_id: replyToId };
+
+        const res = await fetch(endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            conversation_id: conversation.id,
-            message_type: "text",
-            content_text: text,
-            reply_to_message_id: replyToId,
-          }),
+          body: JSON.stringify(body),
         });
 
         const payload = await res.json().catch(() => ({}));
@@ -494,6 +626,13 @@ export function MessageThread({
   const handleSendMedia = useCallback(
     async (payload: SendMediaPayload) => {
       if (!conversation) return;
+
+      const isWebchat = conversation.channel?.type === "webchat";
+      
+      if (isWebchat) {
+        toast.error("Mídia não suportada para webchat ainda");
+        return;
+      }
 
       // Documents show their filename in our own bubble (and to the
       // recipient as the Meta caption when no caption was typed); other
@@ -587,6 +726,13 @@ export function MessageThread({
     ) => {
       if (!conversation) return;
 
+      const isWebchat = conversation.channel?.type === "webchat";
+      
+      if (isWebchat) {
+        toast.error("Templates não suportados para webchat ainda");
+        return;
+      }
+
       const renderedBody = renderTemplateBody(template.body_text, values.body);
       const tempId = `temp-${Date.now()}`;
 
@@ -665,7 +811,7 @@ export function MessageThread({
     return map;
   }, [reactions]);
 
-  const contactDisplayName = contact?.name || contact?.phone || "Customer";
+  const contactDisplayName = contact?.name || contact?.phone || "Cliente";
 
   // Author label for a quoted message: "You" when we sent the parent,
   // contact name when the customer sent it.
@@ -673,7 +819,7 @@ export function MessageThread({
     (m: Message): string => {
       const isAgentMsg =
         m.sender_type === "agent" || m.sender_type === "bot";
-      return isAgentMsg ? "You" : contactDisplayName;
+      return isAgentMsg ? "Você" : contactDisplayName;
     },
     [contactDisplayName],
   );
@@ -774,6 +920,102 @@ export function MessageThread({
     [conversation, onAssignChange],
   );
 
+  const handleCreateAndLinkDeal = useCallback(
+    async (formData: DealFormData) => {
+      if (!conversation || !contact || !pendingStageId) return;
+
+      const supabase = createClient();
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userId = sessionData.session?.user.id;
+      if (!userId) return;
+
+      const title = `${contact.name || contact.phone} - ${formData.serviceType}`;
+
+      // Create new deal
+      const { data: newDeal, error: createError } = await supabase
+        .from("deals")
+        .insert({
+          user_id: userId,
+          account_id: conversation.account_id,
+          pipeline_id: pipelines[0]?.id,
+          stage_id: pendingStageId,
+          contact_id: conversation.contact_id,
+          conversation_id: conversation.id,
+          title,
+          value: 0,
+          currency: "BRL",
+          status: "open",
+          origin_address: formData.originAddress || null,
+          destination_address: formData.destinationAddress || null,
+          end_date: formData.movingDate || null,
+          notes: `Tipo de serviço: ${formData.serviceType}`,
+        })
+        .select("*, contact:contacts(*), assignee:profiles!deals_assigned_to_fkey(*)")
+        .single();
+
+      if (createError) {
+        console.error("Failed to create deal:", createError);
+        toast.error(`Failed to create deal: ${createError.message}`);
+        return;
+      }
+
+      // Refresh deals list
+      const { data: updatedDeals } = await supabase
+        .from("deals")
+        .select("*, contact:contacts(*), assignee:profiles!deals_assigned_to_fkey(*)")
+        .eq("contact_id", conversation.contact_id)
+        .order("created_at", { ascending: false });
+
+      setDeals((updatedDeals as Deal[]) ?? []);
+      setCurrentDeal(newDeal as Deal);
+      toast.success("Negócio criado com sucesso!");
+    },
+    [conversation, contact, pipelines, pendingStageId],
+  );
+
+  const handleLinkDeal = useCallback(
+    async (dealId: string | null) => {
+      if (!conversation) return;
+
+      const supabase = createClient();
+      let updatedDeal;
+
+      if (dealId) {
+        // Link the conversation to this deal
+        const { data, error } = await supabase
+          .from("deals")
+          .update({ conversation_id: conversation.id })
+          .eq("id", dealId)
+          .select("*, contact:contacts(*), assignee:profiles!deals_assigned_to_fkey(*)")
+          .single();
+
+        if (error) {
+          console.error("Failed to link deal:", error);
+          toast.error("Failed to link deal");
+          return;
+        }
+        updatedDeal = data as Deal;
+      } else {
+        // Unlink the conversation from any deal
+        const { error } = await supabase
+          .from("deals")
+          .update({ conversation_id: null })
+          .eq("conversation_id", conversation.id);
+
+        if (error) {
+          console.error("Failed to unlink deal:", error);
+          toast.error("Failed to unlink deal");
+          return;
+        }
+        updatedDeal = null;
+      }
+
+      setCurrentDeal(updatedDeal);
+      toast.success(dealId ? "Deal linked successfully" : "Deal unlinked successfully");
+    },
+    [conversation],
+  );
+
   // Empty state — same WhatsApp-style doodle background as the active
   // thread below, so swapping between empty/selected doesn't change the
   // pattern under the user's eye.
@@ -783,11 +1025,11 @@ export function MessageThread({
         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
           <MessageSquare className="h-8 w-8 text-muted-foreground" />
         </div>
-        <h3 className="mt-4 text-sm font-medium text-muted-foreground">
-          Select a conversation
+          <h3 className="mt-4 text-sm font-medium text-muted-foreground">
+          Selecione uma conversa
         </h3>
         <p className="mt-1 text-xs text-muted-foreground">
-          Choose a conversation from the left to start messaging
+          Escolha uma conversa à esquerda para começar a conversar
         </p>
       </div>
     );
@@ -801,8 +1043,8 @@ export function MessageThread({
   const assignedAgentId = conversation.assigned_agent_id ?? null;
   const currentAssignee = profiles.find((p) => p.user_id === assignedAgentId);
   const assignLabel = assignedAgentId
-    ? (currentAssignee?.full_name ?? "Assigned")
-    : "Assign";
+    ? (currentAssignee?.full_name ?? "Atribuído")
+    : "Atribuir";
 
   return (
     // `min-w-0` is load-bearing: the page already puts min-w-0 on the
@@ -824,7 +1066,7 @@ export function MessageThread({
             <button
               type="button"
               onClick={onBack}
-              aria-label="Back to conversations"
+              aria-label="Voltar para conversas"
               className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground lg:hidden"
             >
               <ArrowLeft className="h-5 w-5" />
@@ -862,10 +1104,10 @@ export function MessageThread({
               type="button"
               onClick={onToggleContactPanel}
               aria-label={
-                contactPanelOpen ? "Hide contact panel" : "Show contact panel"
+                contactPanelOpen ? "Ocultar painel de contato" : "Mostrar painel de contato"
               }
               aria-pressed={contactPanelOpen}
-              title={contactPanelOpen ? "Hide contact" : "Show contact"}
+              title={contactPanelOpen ? "Ocultar contato" : "Mostrar contato"}
               className={cn(
                 "hidden h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-muted hover:text-foreground lg:inline-flex",
                 contactPanelOpen ? "text-primary" : "text-muted-foreground",
@@ -889,8 +1131,8 @@ export function MessageThread({
               type="button"
               onClick={handleRefreshClick}
               disabled={isRefreshing}
-              aria-label="Refresh conversation"
-              title="Refresh"
+              aria-label="Atualizar conversa"
+              title="Atualizar"
               className={cn(
                 "inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-60",
               )}
@@ -944,7 +1186,7 @@ export function MessageThread({
             >
               {profiles.length === 0 ? (
                 <DropdownMenuItem disabled className="text-sm text-muted-foreground">
-                  No teammates available
+                  Nenhum colega disponível
                 </DropdownMenuItem>
               ) : (
                 profiles.map((p) => {
@@ -960,7 +1202,7 @@ export function MessageThread({
                     >
                       <span className="flex-1">
                         {p.full_name}
-                        {p.user_id === user?.id ? " (me)" : ""}
+                        {p.user_id === user?.id ? " (eu)" : ""}
                       </span>
                       {isSelected && <Check className="ml-2 h-3 w-3" />}
                     </DropdownMenuItem>
@@ -974,7 +1216,87 @@ export function MessageThread({
                     onClick={() => handleAssignChange(null)}
                     className="text-sm text-muted-foreground"
                   >
-                    Unassign
+                    Desatribuir
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Deal dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              className={cn(
+                "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-green-100",
+                currentDeal ? "text-green-700 bg-green-50" : "text-green-700 bg-green-50"
+              )}
+            >
+              <GitBranch className="h-3 w-3" />
+              <span className="hidden sm:inline">
+                {currentDeal ? currentDeal.title : "Tabular"}
+              </span>
+              <ChevronDown className="h-3 w-3" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              className="border-border bg-popover"
+            >
+              {/* Create new deal section */}
+              <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+                Criar novo negócio
+              </div>
+              {stages.map((stage) => (
+                <DropdownMenuItem
+                  key={stage.id}
+                  onClick={() => {
+                    setPendingStageId(stage.id);
+                    setDealDialogOpen(true);
+                  }}
+                  className="text-sm"
+                >
+                  <div
+                    className="h-2 w-2 rounded-full mr-2"
+                    style={{ backgroundColor: stage.color }}
+                  />
+                  {stage.name}
+                </DropdownMenuItem>
+              ))}
+
+              {/* Existing deals section */}
+              {deals.length > 0 && (
+                <>
+                  <DropdownMenuSeparator className="bg-border" />
+                  <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+                    Negócios existentes
+                  </div>
+                  {deals.map((d) => {
+                    const isSelected = currentDeal?.id === d.id;
+                    return (
+                      <DropdownMenuItem
+                        key={d.id}
+                        onClick={() => handleLinkDeal(d.id)}
+                        className={cn(
+                          "text-sm",
+                          isSelected ? "text-primary" : "text-popover-foreground"
+                        )}
+                      >
+                        <span className="flex-1">{d.title}</span>
+                        {isSelected && <Check className="ml-2 h-3 w-3" />}
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </>
+              )}
+
+              {/* Unlink option */}
+              {currentDeal && (
+                <>
+                  <DropdownMenuSeparator className="bg-border" />
+                  <DropdownMenuItem
+                    onClick={() => handleLinkDeal(null)}
+                    className="text-sm text-muted-foreground"
+                  >
+                    Desvincular
                   </DropdownMenuItem>
                 </>
               )}
@@ -991,9 +1313,9 @@ export function MessageThread({
           </div>
         ) : messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12">
-            <p className="text-sm text-muted-foreground">No messages yet</p>
+            <p className="text-sm text-muted-foreground">Nenhuma mensagem ainda</p>
             <p className="text-xs text-muted-foreground">
-              Send a template to start the conversation
+              Envie um modelo para iniciar a conversa
             </p>
           </div>
         ) : (
@@ -1071,6 +1393,13 @@ export function MessageThread({
         open={templateModalOpen}
         onOpenChange={setTemplateModalOpen}
         onSelect={handleSendTemplate}
+      />
+
+      <DealCreateDialog
+        open={dealDialogOpen}
+        onOpenChange={setDealDialogOpen}
+        contactName={contact?.name || contact?.phone || "Cliente"}
+        onSubmit={handleCreateAndLinkDeal}
       />
     </div>
   );

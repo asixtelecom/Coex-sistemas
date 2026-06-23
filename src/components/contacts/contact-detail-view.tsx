@@ -104,10 +104,10 @@ export function ContactDetailView({
   }, [contactId, supabase]);
 
   const fetchTags = useCallback(async () => {
-    if (!contactId) return;
+    if (!contactId || !accountId) return;
 
     const [tagsRes, contactTagsRes] = await Promise.all([
-      supabase.from('tags').select('*').order('name'),
+      supabase.from('tags').select('*').eq('account_id', accountId).order('name'),
       supabase.from('contact_tags').select('tag_id').eq('contact_id', contactId),
     ]);
 
@@ -115,7 +115,7 @@ export function ContactDetailView({
     if (contactTagsRes.data) {
       setContactTagIds(contactTagsRes.data.map((ct) => ct.tag_id));
     }
-  }, [contactId, supabase]);
+  }, [contactId, accountId, supabase]);
 
   const fetchNotes = useCallback(async () => {
     if (!contactId) return;
@@ -185,7 +185,7 @@ export function ContactDetailView({
 
   async function saveDetails() {
     if (!contactId || !editPhone.trim()) {
-      toast.error('Phone number is required');
+      toast.error('O número de telefone é obrigatório');
       return;
     }
 
@@ -202,9 +202,9 @@ export function ContactDetailView({
       .eq('id', contactId);
 
     if (error) {
-      toast.error('Failed to update contact');
+      toast.error('Falha ao atualizar contato');
     } else {
-      toast.success('Contact updated');
+      toast.success('Contato atualizado');
       fetchContact();
       onUpdated();
     }
@@ -248,7 +248,7 @@ export function ContactDetailView({
     } = await supabase.auth.getSession();
     const user = session?.user;
     if (!user || !accountId) {
-      toast.error('Not authenticated');
+      toast.error('Não autenticado');
       setSavingNote(false);
       return;
     }
@@ -261,11 +261,11 @@ export function ContactDetailView({
     });
 
     if (error) {
-      toast.error('Failed to add note');
+      toast.error('Falha ao adicionar nota');
     } else {
       setNewNote('');
       fetchNotes();
-      toast.success('Note added');
+      toast.success('Nota adicionada');
     }
     setSavingNote(false);
   }

@@ -1,0 +1,103 @@
+.mailbox-icon-fill-danger {
+    fill: #fd397a;
+}
+
+.mailbox-important-icon {
+    padding: 5px 5px;
+    color: #fd397a;
+}
+
+.mailbox-important-icon:hover {
+    color: #fd397a !important;
+}
+
+.mailbox-star-icon {
+    padding: 5px 5px;
+    color: #ffb822;
+}
+
+.mailbox-star-icon:hover {
+    color: #ffb822 !important;
+}
+
+.mailbox-button-group .btn {
+    margin: 10px 0 !important;
+    padding: 5px 10px;
+}
+
+.mailbox-color-soft-white {
+    color: #7988a2;
+}
+
+.mailbox-badge-alert {
+    background: #F9A52D;
+}
+
+.mailbox-mr30 {
+    margin-right: 30px;
+}
+
+.mailbox-mailboxes-dropdown {
+    border-radius: .25rem;
+}
+
+.mailbox-mailboxes-dropdown .active {
+    color: #595959;
+    background-color: #F8F9FA;
+}
+
+.mailbox-mailboxes-dropdown .dropdown-toggle {
+    border-radius: 3px;
+}
+
+.mailbox-mailboxes-dropdown .mailbox-title::after {
+    content: " ";
+    border: solid;
+    border-width: 0 0.075rem 0.075rem 0;
+    display: inline-block;
+    padding: 2px;
+    transform: rotate(45deg);
+    margin-top: 8px;
+    position: absolute;
+    right: 15px;
+}
+
+.mailbox-overflow-visible {
+    overflow: visible;
+}
+
+.mailbox-action-tabs a.active {
+    margin-top: 0px !important;
+}
+
+.mailbox-templates-dropdown {
+    overflow-y: scroll;
+    max-height: 295px;
+}
+
+.mailbox-email-message {
+    overflow-wrap: anywhere;
+}
+
+.mailbox-templates-dropdown-tinymce {
+    padding: 5px !important;
+    background: rgb(255, 255, 255) !important;
+    border: 1px solid transparent !important;
+    border-radius: 6px !important;
+    box-shadow: rgba(34, 47, 62, 0.2) 0px 0px 2px 0px, rgba(34, 47, 62, 0.15) 0px 4px 8px 0px !important;
+}
+
+.mailbox-templates-dropdown-tinymce li {
+    padding: 5px 8px !important;
+    align-items: center !important;
+    border-radius: 3px !important;
+    color: #222f3e !important;
+    display: flex !important;
+    cursor: pointer !important;
+}
+
+.mailbox-templates-dropdown-tinymce li:hover,
+.mailbox-templates-dropdown-tinymce a:hover {
+    background: #6690F4 !important;
+    color: #fff !important;
+}
