@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { Suspense, useState, useCallback, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { Conversation, Message, Contact, ConversationStatus } from "@/types";
@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils";
 // across reloads and sessions (device-scoped, like the theme prefs).
 const CONTACT_PANEL_STORAGE_KEY = "wacrm:inbox:contact-panel-open";
 
-export default function InboxPage() {
+function InboxPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   /**
@@ -645,5 +645,20 @@ export default function InboxPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function InboxPage() {
+  return (
+    <Suspense fallback={
+      <div className="-m-4 flex h-[calc(100vh-3.5rem)] items-center justify-center sm:-m-6">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+          <p className="text-sm text-muted-foreground">Carregando...</p>
+        </div>
+      </div>
+    }>
+      <InboxPageInner />
+    </Suspense>
   );
 }
