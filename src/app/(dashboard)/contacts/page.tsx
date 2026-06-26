@@ -41,6 +41,7 @@ import {
   ChevronLeft,
   ChevronRight,
   SlidersHorizontal,
+  Smartphone,
 } from 'lucide-react';
 import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
@@ -85,6 +86,9 @@ export default function ContactsPage() {
 
   // All tags for display
   const [tagsMap, setTagsMap] = useState<Record<string, Tag>>({});
+
+  // Additional phone counts per contact
+  const [phoneCounts, setPhoneCounts] = useState<Record<string, number>>({});
 
   const fetchTags = useCallback(async () => {
     const { data } = await supabase.from('tags').select('*');
@@ -153,6 +157,18 @@ export default function ContactsPage() {
     }));
 
     setContacts(enriched);
+
+    // Fetch additional phone counts
+    const { data: phoneData } = await supabase
+      .from('contact_phones')
+      .select('contact_id')
+      .in('contact_id', contactIds);
+    const counts: Record<string, number> = {};
+    phoneData?.forEach((p) => {
+      counts[p.contact_id] = (counts[p.contact_id] ?? 0) + 1;
+    });
+    setPhoneCounts(counts);
+
     setLoading(false);
   }, [supabase, page, search, tagsMap]);
 
@@ -369,9 +385,11 @@ export default function ContactsPage() {
                 />
               </TableHead>
               <TableHead className="text-muted-foreground">Nome</TableHead>
+              <TableHead className="text-muted-foreground hidden md:table-cell">CPF / CNPJ</TableHead>
               <TableHead className="text-muted-foreground">Telefone</TableHead>
               <TableHead className="text-muted-foreground hidden md:table-cell">E-mail</TableHead>
               <TableHead className="text-muted-foreground hidden lg:table-cell">Empresa</TableHead>
+              <TableHead className="text-muted-foreground hidden lg:table-cell">Endereço</TableHead>
               <TableHead className="text-muted-foreground hidden md:table-cell">Tags</TableHead>
               <TableHead className="text-muted-foreground hidden lg:table-cell">Criado em</TableHead>
               <TableHead className="text-muted-foreground w-12" />
@@ -380,7 +398,7 @@ export default function ContactsPage() {
           <TableBody>
             {loading ? (
               <TableRow className="border-border">
-                <TableCell colSpan={8} className="text-center py-12">
+                <TableCell colSpan={10} className="text-center py-12">
                   <div className="flex flex-col items-center gap-2">
                     <Loader2 className="size-6 animate-spin text-primary" />
                     <p className="text-sm text-muted-foreground">Carregando contatos...</p>
@@ -389,7 +407,7 @@ export default function ContactsPage() {
               </TableRow>
             ) : contacts.length === 0 ? (
               <TableRow className="border-border">
-                <TableCell colSpan={8} className="text-center py-12">
+                <TableCell colSpan={10} className="text-center py-12">
                   <div className="flex flex-col items-center gap-2">
                     <Users className="size-8 text-muted-foreground" />
                     <p className="text-sm text-muted-foreground">
@@ -439,14 +457,28 @@ export default function ContactsPage() {
                       {contact.name || <span className="text-muted-foreground italic">Sem nome</span>}
                     </div>
                   </TableCell>
+                  <TableCell className="text-muted-foreground text-xs hidden md:table-cell">
+                    {contact.document || <span className="text-muted-foreground">-</span>}
+                  </TableCell>
                   <TableCell className="text-muted-foreground font-mono text-xs">
-                    {contact.phone}
+                    <div className="flex items-center gap-1">
+                      {contact.phone}
+                      {phoneCounts[contact.id] > 0 && (
+                        <span className="inline-flex items-center gap-0.5 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                          <Smartphone className="size-2.5" />
+                          +{phoneCounts[contact.id]}
+                        </span>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell className="text-muted-foreground hidden md:table-cell text-sm">
                     {contact.email || <span className="text-muted-foreground">-</span>}
                   </TableCell>
                   <TableCell className="text-muted-foreground hidden lg:table-cell text-sm">
                     {contact.company || <span className="text-muted-foreground">-</span>}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground text-sm hidden lg:table-cell">
+                    {contact.address || <span className="text-muted-foreground">-</span>}
                   </TableCell>
                   <TableCell className="hidden md:table-cell">
                     <div className="flex flex-wrap gap-1">

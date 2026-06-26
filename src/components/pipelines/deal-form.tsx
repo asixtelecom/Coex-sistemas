@@ -30,6 +30,7 @@ import {
   MessageSquare,
   DollarSign,
   Loader2,
+  Search,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -59,10 +60,18 @@ export function DealForm({
   const [value, setValue] = useState("");
   const [currency, setCurrency] = useState(defaultCurrency);
   const [contactId, setContactId] = useState("");
+  const [contactName, setContactName] = useState("");
+  const [contactDocument, setContactDocument] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [contactCompany, setContactCompany] = useState("");
+  const [contactSearch, setContactSearch] = useState("");
+  const [contactDropdownOpen, setContactDropdownOpen] = useState(false);
   const [stageId, setStageId] = useState("");
   const [assignedTo, setAssignedTo] = useState("");
   const [expectedCloseDate, setExpectedCloseDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [propertyType, setPropertyType] = useState("");
   const [originAddress, setOriginAddress] = useState("");
   const [destinationAddress, setDestinationAddress] = useState("");
   const [notes, setNotes] = useState("");
@@ -91,10 +100,17 @@ export function DealForm({
       // contact_id is nullable when the contact has been deleted
       // (migration 004: ON DELETE SET NULL). "" means "no selection".
       setContactId(deal.contact_id ?? "");
+      setContactName(deal.contact?.name ?? "");
+      setContactDocument(deal.contact?.document ?? "");
+      setContactPhone(deal.contact?.phone ?? "");
+      setContactEmail(deal.contact?.email ?? "");
+      setContactCompany(deal.contact?.company ?? "");
+      setContactSearch(deal.contact?.name ?? "");
       setStageId(deal.stage_id);
       setAssignedTo(deal.assigned_to ?? "");
       setExpectedCloseDate(deal.expected_close_date ?? "");
       setEndDate(deal.end_date ?? "");
+      setPropertyType(deal.property_type ?? "");
       setOriginAddress(deal.origin_address ?? "");
       setDestinationAddress(deal.destination_address ?? "");
       setNotes(deal.notes ?? "");
@@ -103,10 +119,17 @@ export function DealForm({
       setValue("");
       setCurrency(defaultCurrency);
       setContactId("");
+      setContactName("");
+      setContactDocument("");
+      setContactPhone("");
+      setContactEmail("");
+      setContactCompany("");
+      setContactSearch("");
       setStageId(defaultStageId || stages[0]?.id || "");
       setAssignedTo("");
       setExpectedCloseDate("");
       setEndDate("");
+      setPropertyType("");
       setOriginAddress("");
       setDestinationAddress("");
       setNotes("");
@@ -158,12 +181,64 @@ export function DealForm({
     };
   }, [open, contactId, supabase]);
 
+  function formatPhone(value: string) {
+    const digits = value.replace(/\D/g, '').slice(0, 11);
+    if (digits.length <= 2) return digits.length ? `(${digits}` : '';
+    if (digits.length <= 7) {
+      return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+    }
+    if (digits.length <= 10) {
+      return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+    }
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+  }
+
   async function handleSave() {
-    if (!title.trim() || !contactId || !stageId) {
-      toast.error("Título, contato e estágio são obrigatórios");
+    if (!title.trim() || !contactPhone.trim() || !stageId) {
+      toast.error("Serviço, telefone e estágio são obrigatórios");
       return;
     }
     setSaving(true);
+
+    // Save/update contact data first
+    const contactPayload = {
+      name: contactName.trim() || null,
+      phone: contactPhone.trim(),
+      document: contactDocument.trim() || null,
+      email: contactEmail.trim() || null,
+      company: contactCompany.trim() || null,
+    };
+
+    if (contactId) {
+      const { error: contactError } = await supabase
+        .from("contacts")
+        .update({ ...contactPayload, updated_at: new Date().toISOString() })
+        .eq("id", contactId);
+      if (contactError) {
+        toast.error("Falha ao salvar contato");
+        setSaving(false);
+        return;
+      }
+    } else {
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
+      if (!user || !accountId) {
+        toast.error("Não autenticado");
+        setSaving(false);
+        return;
+      }
+      const { data: newContact, error: contactError } = await supabase
+        .from("contacts")
+        .insert({ ...contactPayload, user_id: user.id, account_id: accountId })
+        .select("id")
+        .single();
+      if (contactError) {
+        toast.error("Falha ao criar contato");
+        setSaving(false);
+        return;
+      }
+      setContactId(newContact.id);
+    }
 
     const payload = {
       title: title.trim(),
@@ -176,20 +251,16 @@ export function DealForm({
       notes: notes.trim() || null,
       expected_close_date: expectedCloseDate || null,
       end_date: endDate || null,
+      property_type: propertyType || null,
       origin_address: originAddress.trim() || null,
       destination_address: destinationAddress.trim() || null,
     };
 
     if (deal) {
-      const { error } = await supabase
+      await supabase
         .from("deals")
         .update(payload)
         .eq("id", deal.id);
-      if (error) {
-        toast.error("Falha ao salvar negócio");
-        setSaving(false);
-        return;
-      }
     } else {
       const {
         data: { session },
@@ -264,13 +335,13 @@ export function DealForm({
         <div className="flex h-full flex-col">
           <SheetHeader className="border-b border-border/50 p-4">
             <SheetTitle className="text-popover-foreground">
-              {deal ? "Editar Negócio" : "Novo Negócio"}
+              {deal ? "Editar Negócio" : "Tipo de Serviços"}
             </SheetTitle>
           </SheetHeader>
 
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             <div className="grid gap-2">
-              <Label className="text-muted-foreground">Título</Label>
+              <Label className="text-muted-foreground">Serviços</Label>
               <select
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
@@ -292,21 +363,148 @@ export function DealForm({
             </div>
 
             <div className="grid gap-2">
-              <Label className="text-muted-foreground">Contato</Label>
-              <select
-                value={contactId}
-                onChange={(e) => setContactId(e.target.value)}
-                className="h-9 w-full rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-              >
-                <option value="">Selecione um contato</option>
-                {contacts.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name || c.phone}
-                  </option>
-                ))}
-              </select>
+              <Label className="text-muted-foreground">Buscar contato existente</Label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={contactSearch}
+                  onChange={(e) => {
+                    setContactSearch(e.target.value)
+                    setContactDropdownOpen(true)
+                    if (!e.target.value) {
+                      setContactId("")
+                      setContactName("")
+                      setContactDocument("")
+                      setContactPhone("")
+                      setContactEmail("")
+                      setContactCompany("")
+                    }
+                  }}
+                  onFocus={() => setContactDropdownOpen(true)}
+                  placeholder="Pesquisar por nome ou telefone..."
+                  className="h-9 w-full rounded-lg border border-border bg-muted pl-9 pr-3 text-sm text-foreground placeholder-muted-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                />
+                {contactDropdownOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setContactDropdownOpen(false)} />
+                    <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-48 overflow-auto rounded-lg border border-border bg-popover shadow-lg">
+                      {(() => {
+                        const filteredContacts = contactSearch.trim()
+                          ? contacts.filter(c =>
+                              (c.name || '').toLowerCase().includes(contactSearch.toLowerCase()) ||
+                              (c.phone || '').toLowerCase().includes(contactSearch.toLowerCase())
+                            )
+                          : contacts;
+                        if (filteredContacts.length === 0) {
+                          return (
+                            <div className="px-3 py-4 text-center text-xs text-muted-foreground">
+                              Nenhum contato encontrado
+                            </div>
+                          );
+                        }
+                        return filteredContacts.map((c) => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => {
+                              setContactId(c.id)
+                              setContactName(c.name || "")
+                              setContactDocument(c.document || "")
+                              setContactPhone(c.phone || "")
+                              setContactEmail(c.email || "")
+                              setContactCompany(c.company || "")
+                              setContactSearch(c.name || c.phone || "")
+                              setContactDropdownOpen(false)
+                            }}
+                            className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-muted ${
+                              c.id === contactId ? 'bg-primary/10' : ''
+                            }`}
+                          >
+                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-medium text-muted-foreground">
+                              {(c.name || c.phone || '?').charAt(0).toUpperCase()}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate font-medium text-foreground/80">
+                                {c.name || 'Sem nome'}
+                              </p>
+                              <p className="truncate text-[10px] text-muted-foreground/60">
+                                {[c.phone, c.email, c.company].filter(Boolean).join(' · ')}
+                              </p>
+                            </div>
+                          </button>
+                        ));
+                      })()}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
 
-              {linkedConversation && (
+            <div className="grid gap-2">
+              <Label htmlFor="df-name" className="text-muted-foreground">Nome</Label>
+              <Input
+                id="df-name"
+                value={contactName}
+                onChange={(e) => setContactName(e.target.value)}
+                placeholder="Nome do contato"
+                className="border-border bg-muted text-foreground"
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="df-document" className="text-muted-foreground">CNPJ</Label>
+              <Input
+                id="df-document"
+                value={contactDocument}
+                onChange={(e) => setContactDocument(e.target.value)}
+                placeholder="00.000.000/0000-00"
+                className="border-border bg-muted text-foreground"
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="df-phone" className="text-muted-foreground">Telefone</Label>
+              <Input
+                id="df-phone"
+                value={formatPhone(contactPhone)}
+                onChange={(e) => setContactPhone(e.target.value.replace(/\D/g, ''))}
+                placeholder="(11) 99999-9999"
+                className="border-border bg-muted text-foreground"
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="df-email" className="text-muted-foreground">E-mail</Label>
+              <Input
+                id="df-email"
+                type="email"
+                value={contactEmail}
+                onChange={(e) => {
+                  setContactEmail(e.target.value)
+                  setContactId("")
+                  setContactSearch("")
+                }}
+                placeholder="email@exemplo.com"
+                className="border-border bg-muted text-foreground"
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="df-company" className="text-muted-foreground">Empresa</Label>
+              <Input
+                id="df-company"
+                value={contactCompany}
+                onChange={(e) => {
+                  setContactCompany(e.target.value)
+                  setContactId("")
+                  setContactSearch("")
+                }}
+                placeholder="Empresa Ltda."
+                className="border-border bg-muted text-foreground"
+              />
+            </div>
+
+            {linkedConversation && (
                 <Link
                   href="/inbox"
                   className="mt-1 inline-flex items-center gap-1.5 self-start rounded-md bg-primary/10 px-2 py-1 text-xs text-primary hover:bg-primary/20"
@@ -315,7 +513,6 @@ export function DealForm({
                   Vincular à Conversa
                 </Link>
               )}
-            </div>
 
             <div className="grid gap-2">
               <Label className="text-muted-foreground">Endereço de origem</Label>
@@ -337,33 +534,17 @@ export function DealForm({
               />
             </div>
 
-            <div className="grid grid-cols-[1fr_110px] gap-3">
-              <div className="grid gap-2">
-                <Label className="text-muted-foreground">Valor</Label>
-                <div className="relative">
-                  <DollarSign className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    type="number"
-                    value={value}
-                    onChange={(e) => setValue(e.target.value)}
-                    placeholder="0"
-                    className="border-border bg-muted pl-7 text-foreground"
-                  />
-                </div>
-              </div>
-              <div className="grid gap-2">
-                <Label className="text-muted-foreground">Moeda</Label>
-                <select
-                  value={currency}
-                  onChange={(e) => setCurrency(e.target.value)}
-                  className="h-9 w-full rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary"
-                >
-                  {CURRENCIES.map((c) => (
-                    <option key={c.code} value={c.code}>
-                      {c.code}
-                    </option>
-                  ))}
-                </select>
+            <div className="grid gap-2">
+              <Label className="text-muted-foreground">Valor</Label>
+              <div className="relative">
+                <DollarSign className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  type="number"
+                  value={value}
+                  onChange={(e) => setValue(e.target.value)}
+                  placeholder="0"
+                  className="border-border bg-muted pl-7 text-foreground"
+                />
               </div>
             </div>
 
@@ -385,6 +566,22 @@ export function DealForm({
                 onChange={(e) => setEndDate(e.target.value)}
                 className="border-border bg-muted text-foreground"
               />
+            </div>
+
+            <div className="grid gap-2">
+              <Label className="text-muted-foreground">Tipo de imóvel</Label>
+              <select
+                value={propertyType}
+                onChange={(e) => setPropertyType(e.target.value)}
+                className="h-9 w-full rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary"
+              >
+                <option value="">Selecione...</option>
+                <option value="Residencia terrea">Residencia terrea</option>
+                <option value="Apto c/ Elevador">Apto c/ Elevador</option>
+                <option value="apto s/ elevador">apto s/ elevador</option>
+                <option value="galpao">galpao</option>
+                <option value="industria">industria</option>
+              </select>
             </div>
 
             <div className="grid gap-2">
@@ -491,7 +688,7 @@ export function DealForm({
               </Button>
               <Button
                 onClick={handleSave}
-                disabled={saving || !title.trim() || !contactId || !stageId}
+                disabled={saving || !title.trim() || !contactPhone.trim() || !stageId}
                 className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 {saving ? "Salvando..." : deal ? "Salvar Alterações" : "Criar Negócio"}

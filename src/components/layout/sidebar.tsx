@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { useTotalUnread } from "@/hooks/use-total-unread";
+import { useTheme } from "@/hooks/use-theme";
 import {
   Crown,
   GitBranch,
@@ -29,6 +30,7 @@ import {
   Calendar,
   CreditCard,
   FileSignature,
+
 } from "lucide-react";
 import type { AccountRole } from "@/lib/auth/roles";
 
@@ -96,11 +98,11 @@ interface NavItem {
 const navItems: NavItem[] = [
   { href: "/dashboard", label: "Painel", icon: LayoutDashboard },
   { href: "/inbox", label: "Caixa de Entrada", icon: MessageSquare },
-  { href: "/pedidos", label: "Meus Pedidos", icon: ClipboardList },
+  { href: "/pedidos", label: "Fechamento", icon: ClipboardList },
   { href: "/email", label: "E-mail", icon: Mail },
   { href: "/pagamentos", label: "Pagamentos", icon: CreditCard },
   { href: "/assinaturas", label: "Assinaturas", icon: FileSignature },
-  { href: "/agenda", label: "Agenda", icon: Calendar },
+  { href: "/agenda", label: "Vistoria", icon: Calendar },
   { href: "/contacts", label: "Contatos", icon: Users },
   { href: "/pipelines", label: "Funil de Vendas", icon: GitBranch },
   { href: "/broadcasts", label: "Transmissões", icon: Radio },
@@ -128,6 +130,7 @@ interface SidebarProps {
 export function Sidebar({ open = false, onClose }: SidebarProps) {
   const pathname = usePathname();
   const { profile, profileLoading, account, accountRole, canEditSettings, canEditOwnProfile, signOut } = useAuth();
+  const { mode } = useTheme();
   const totalUnread = useTotalUnread();
 const [collapsed, setCollapsed] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -160,7 +163,7 @@ const [collapsed, setCollapsed] = useState(() => {
     () => {
       if (canEditSettings) return navItems
       return navItems.filter(
-        (item) => !['/broadcasts', '/automations', '/flows', '/pedidos', '/pagamentos', '/assinaturas', '/agenda'].includes(item.href),
+        (item) => !['/broadcasts', '/automations', '/flows', '/pedidos', '/pagamentos', '/assinaturas'].includes(item.href),
       )
     },
     [canEditSettings],
@@ -264,7 +267,7 @@ const [collapsed, setCollapsed] = useState(() => {
                     )}
                     title={collapsed ? item.label : undefined}
                   >
-                    <item.icon className="h-4 w-4 shrink-0" />
+                    <item.icon className={cn("h-4 w-4 shrink-0", item.href === "/pedidos" && mode === "light" && "text-orange-500")} />
                     <span className={cn("flex-1 transition-opacity duration-200", collapsed && "lg:hidden")}>{item.label}</span>
                     {item.beta && (
                       <span

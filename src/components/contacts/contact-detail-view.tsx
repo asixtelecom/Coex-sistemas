@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { formatCurrency } from '@/lib/currency';
 import { toast } from 'sonner';
-import type { Contact, Tag, ContactTag, ContactNote, CustomField, ContactCustomValue, Deal } from '@/types';
+import type { Contact, Tag, ContactTag, ContactNote, CustomField, ContactCustomValue, Deal, ContactPhone } from '@/types';
 import {
   Sheet,
   SheetContent,
@@ -19,8 +19,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Phone,
   Mail,
@@ -33,6 +31,7 @@ import {
   Save,
   X,
   DollarSign,
+  Smartphone,
 } from 'lucide-react';
 
 interface ContactDetailViewProps {
@@ -40,6 +39,12 @@ interface ContactDetailViewProps {
   onOpenChange: (open: boolean) => void;
   contactId: string | null;
   onUpdated: () => void;
+}
+
+interface DetailPhone {
+  id?: string;
+  phone: string;
+  label: string;
 }
 
 export function ContactDetailView({
@@ -53,13 +58,14 @@ export function ContactDetailView({
 
   const [contact, setContact] = useState<Contact | null>(null);
   const [loading, setLoading] = useState(false);
-  const [copiedPhone, setCopiedPhone] = useState(false);
+  const [copiedPhone, setCopiedPhone] = useState<string | null>(null);
 
   // Details tab
   const [editName, setEditName] = useState('');
   const [editPhone, setEditPhone] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editCompany, setEditCompany] = useState('');
+  const [editAdditionalPhones, setEditAdditionalPhones] = useState<DetailPhone[]>([]);
   const [savingDetails, setSavingDetails] = useState(false);
 
   // Tags tab
@@ -83,6 +89,13 @@ export function ContactDetailView({
   const [deals, setDeals] = useState<Deal[]>([]);
   const [loadingDeals, setLoadingDeals] = useState(false);
 
+  const labelMap: Record<string, string> = {
+    primary: 'Principal',
+    commercial: 'Comercial',
+    home: 'Residencial',
+    other: 'Outro',
+  };
+
   const fetchContact = useCallback(async () => {
     if (!contactId) return;
     setLoading(true);
@@ -101,6 +114,27 @@ export function ContactDetailView({
       setEditCompany(data.company ?? '');
     }
     setLoading(false);
+  }, [contactId, supabase]);
+
+  const fetchAdditionalPhones = useCallback(async () => {
+    if (!contactId) {
+      setEditAdditionalPhones([]);
+      return;
+    }
+    const { data } = await supabase
+      .from('contact_phones')
+      .select('*')
+      .eq('contact_id', contactId)
+      .order('created_at');
+    if (data) {
+      setEditAdditionalPhones(
+        data.map((cp: ContactPhone) => ({
+          id: cp.id,
+          phone: cp.phone,
+          label: cp.label,
+        })),
+      );
+    }
   }, [contactId, supabase]);
 
   const fetchTags = useCallback(async () => {
@@ -169,18 +203,18 @@ export function ContactDetailView({
   useEffect(() => {
     if (open && contactId) {
       fetchContact();
+      fetchAdditionalPhones();
       fetchTags();
       fetchNotes();
       fetchCustomFields();
       fetchDeals();
     }
-  }, [open, contactId, fetchContact, fetchTags, fetchNotes, fetchCustomFields, fetchDeals]);
+  }, [open, contactId, fetchContact, fetchAdditionalPhones, fetchTags, fetchNotes, fetchCustomFields, fetchDeals]);
 
-  async function copyPhone() {
-    if (!contact) return;
-    await navigator.clipboard.writeText(contact.phone);
-    setCopiedPhone(true);
-    setTimeout(() => setCopiedPhone(false), 2000);
+  async function copyPhone(phone: string) {
+    await navigator.clipboard.writeText(phone);
+    setCopiedPhone(phone);
+    setTimeout(() => setCopiedPhone(null), 2000);
   }
 
   async function saveDetails() {
@@ -204,11 +238,48 @@ export function ContactDetailView({
     if (error) {
       toast.error('Falha ao atualizar contato');
     } else {
+      // Sync additional phones
+      await supabase
+        .from('contact_phones')
+        .delete()
+        .eq('contact_id', contactId);
+
+      const validPhones = editAdditionalPhones.filter((p) => p.phone.trim());
+      if (validPhones.length > 0) {
+        const phoneRows = validPhones.map((p) => ({
+          contact_id: contactId,
+          phone: p.phone.trim(),
+          label: p.label,
+        }));
+        await supabase.from('contact_phones').insert(phoneRows);
+      }
+
       toast.success('Contato atualizado');
       fetchContact();
+      fetchAdditionalPhones();
       onUpdated();
     }
     setSavingDetails(false);
+  }
+
+  function addPhone() {
+    setEditAdditionalPhones((prev) => [...prev, { phone: '', label: 'other' }]);
+  }
+
+  function removePhone(index: number) {
+    setEditAdditionalPhones((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function updatePhone(index: number, phone: string) {
+    setEditAdditionalPhones((prev) =>
+      prev.map((p, i) => (i === index ? { ...p, phone } : p)),
+    );
+  }
+
+  function updateLabel(index: number, label: string) {
+    setEditAdditionalPhones((prev) =>
+      prev.map((p, i) => (i === index ? { ...p, label } : p)),
+    );
   }
 
   async function toggleTag(tagId: string) {
@@ -289,7 +360,6 @@ export function ContactDetailView({
     setSavingCustom(true);
 
     try {
-      // Delete existing values and re-insert
       await supabase
         .from('contact_custom_values')
         .delete()
@@ -327,6 +397,18 @@ export function ContactDetailView({
       .slice(0, 2);
   }
 
+  function formatPhone(value: string) {
+    const digits = value.replace(/\D/g, '').slice(0, 11);
+    if (digits.length <= 2) return digits.length ? `(${digits}` : '';
+    if (digits.length <= 7) {
+      return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+    }
+    if (digits.length <= 10) {
+      return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+    }
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+  }
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
@@ -356,17 +438,23 @@ export function ContactDetailView({
                   </SheetDescription>
                   <div className="flex flex-wrap items-center gap-3 mt-1.5 text-xs text-muted-foreground">
                     <button
-                      onClick={copyPhone}
+                      onClick={() => copyPhone(contact.phone)}
                       className="flex items-center gap-1 hover:text-primary transition-colors cursor-pointer"
                     >
                       <Phone className="size-3" />
                       {contact.phone}
-                      {copiedPhone ? (
+                      {copiedPhone === contact.phone ? (
                         <Check className="size-3 text-primary" />
                       ) : (
                         <Copy className="size-3" />
                       )}
                     </button>
+                    {editAdditionalPhones.length > 0 && (
+                      <span className="flex items-center gap-1 text-muted-foreground/60">
+                        <Smartphone className="size-3" />
+                        +{editAdditionalPhones.length}
+                      </span>
+                    )}
                     {contact.email && (
                       <span className="flex items-center gap-1">
                         <Mail className="size-3" />
@@ -440,6 +528,54 @@ export function ContactDetailView({
                       className="bg-muted border-border text-foreground h-8 text-sm"
                     />
                   </div>
+
+                  {/* Additional phones */}
+                  <div className="space-y-1.5">
+                    <Label className="text-muted-foreground text-xs">
+                      Additional Phones
+                    </Label>
+                    {editAdditionalPhones.map((item, index) => (
+                      <div key={index} className="flex items-start gap-2">
+                        <div className="flex-1">
+                          <Input
+                            value={formatPhone(item.phone)}
+                            onChange={(e) =>
+                              updatePhone(index, e.target.value.replace(/\D/g, ''))
+                            }
+                            placeholder="(11) 99999-9999"
+                            className="bg-muted border-border text-foreground h-8 text-sm"
+                          />
+                        </div>
+                        <select
+                          value={item.label}
+                          onChange={(e) => updateLabel(index, e.target.value)}
+                          className="h-8 rounded-md border border-border bg-muted px-1.5 text-xs text-foreground"
+                        >
+                          <option value="commercial">Commercial</option>
+                          <option value="home">Home</option>
+                          <option value="other">Other</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => removePhone(index)}
+                          className="mt-0.5 text-muted-foreground hover:text-red-400 transition-colors"
+                        >
+                          <X className="size-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={addPhone}
+                      className="border-border text-muted-foreground hover:bg-muted w-full h-7 text-xs"
+                    >
+                      <Plus className="size-3" />
+                      Add Phone
+                    </Button>
+                  </div>
+
                   <div className="space-y-1.5">
                     <Label className="text-muted-foreground text-xs">Email</Label>
                     <Input

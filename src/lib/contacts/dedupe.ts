@@ -28,9 +28,9 @@ export interface ExistingContact {
 
 /**
  * Find an existing contact in `accountId` whose phone matches `phone`,
- * or null. Pre-filters in SQL by the last-8-digit suffix (so we don't
- * pull every contact), then applies the strict `phonesMatch` in JS on
- * the small candidate set — the exact approach the webhook has used.
+ * or null. Checks both the primary phone (`contacts.phone`) and
+ * additional phones (`contact_phones`). Pre-filters in SQL by the
+ * last-8-digit suffix, then applies the strict `phonesMatch` in JS.
  */
 export async function findExistingContact(
   db: SupabaseClient,
@@ -42,17 +42,37 @@ export async function findExistingContact(
 
   const suffix = normalized.length >= 8 ? normalized.slice(-8) : normalized;
 
-  const { data, error } = await db
+  // Check primary phone in contacts table
+  const { data: contacts, error } = await db
     .from("contacts")
     .select("*")
     .eq("account_id", accountId)
     .like("phone", `%${suffix}`);
 
-  if (error || !data) return null;
+  if (!error && contacts) {
+    const match = (contacts as ExistingContact[]).find((c) =>
+      phonesMatch(c.phone, phone),
+    );
+    if (match) return match;
+  }
 
-  return (
-    (data as ExistingContact[]).find((c) => phonesMatch(c.phone, phone)) ?? null
-  );
+  // Check additional phones in contact_phones table
+  const { data: phoneRows } = await db
+    .from("contact_phones")
+    .select("contact_id, phone, contact:contacts!inner(account_id, id, phone, name)")
+    .eq("contact.account_id", accountId)
+    .like("phone", `%${suffix}`);
+
+  if (phoneRows && phoneRows.length > 0) {
+    for (const row of phoneRows) {
+      if (phonesMatch(row.phone, phone)) {
+        const c = row.contact as unknown as ExistingContact;
+        return { id: c.id, phone: row.phone, name: c.name };
+      }
+    }
+  }
+
+  return null;
 }
 
 /**

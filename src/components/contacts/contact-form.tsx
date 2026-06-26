@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { toast } from 'sonner';
-import type { Contact, Tag, ContactTag } from '@/types';
+import type { Contact, Tag, ContactTag, ContactPhone } from '@/types';
 import {
   findExistingContact,
   isExactMatch,
@@ -22,8 +22,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { Loader2, AlertTriangle } from 'lucide-react';
+import { Loader2, AlertTriangle, Plus, X } from 'lucide-react';
 
 interface ContactFormProps {
   open: boolean;
@@ -31,9 +30,13 @@ interface ContactFormProps {
   contact?: Contact | null;
   contactTags?: ContactTag[];
   onSaved: () => void;
-  /** Open an existing contact's detail view — used by the duplicate
-   *  notice to jump to the contact that already owns this number. */
   onViewExisting?: (contactId: string) => void;
+}
+
+interface AdditionalPhone {
+  id?: string;
+  phone: string;
+  label: string;
 }
 
 export function ContactForm({
@@ -49,15 +52,15 @@ export function ContactForm({
   const isEdit = !!contact;
 
   const [name, setName] = useState('');
+  const [document, setDocument] = useState('');
+  const [address, setAddress] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [company, setCompany] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // Duplicate-phone detection for NEW contacts. `exact` (same digits)
-  // hard-blocks the save; a fuzzy trunk-variant match only warns. The
-  // DB unique index (migration 022) is the real backstop — this is the
-  // friendly heads-up before we get there.
+  const [additionalPhones, setAdditionalPhones] = useState<AdditionalPhone[]>([]);
+
   const [dupMatch, setDupMatch] = useState<
     { contact: ExistingContact; exact: boolean } | null
   >(null);
@@ -70,17 +73,68 @@ export function ContactForm({
   useEffect(() => {
     if (open) {
       setName(contact?.name ?? '');
+      setDocument(contact?.document ?? '');
+      setAddress(contact?.address ?? '');
       setPhone(contact?.phone ?? '');
       setEmail(contact?.email ?? '');
       setCompany(contact?.company ?? '');
       setSelectedTagIds(contactTags.map((ct) => ct.tag_id));
       setDupMatch(null);
       fetchTags();
+      fetchAdditionalPhones();
     }
   }, [open, contact]);
 
-  // Look up an existing contact with this number (new contacts only).
-  // Runs on blur so we don't query on every keystroke.
+  async function fetchAdditionalPhones() {
+    if (!contact?.id) {
+      setAdditionalPhones([]);
+      return;
+    }
+    const { data } = await supabase
+      .from('contact_phones')
+      .select('*')
+      .eq('contact_id', contact.id)
+      .order('created_at');
+    if (data) {
+      setAdditionalPhones(
+        data.map((cp: ContactPhone) => ({
+          id: cp.id,
+          phone: cp.phone,
+          label: cp.label,
+        })),
+      );
+    }
+  }
+
+  function formatDocument(value: string) {
+    const digits = value.replace(/\D/g, '').slice(0, 14);
+    if (digits.length <= 11) {
+      return digits
+        .replace(/^(\d{3})(\d)/, '$1.$2')
+        .replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3')
+        .replace(/^(\d{3})\.(\d{3})\.(\d{3})(\d)/, '$1.$2.$3-$4')
+        .slice(0, 14);
+    }
+    return digits
+      .replace(/^(\d{2})(\d)/, '$1.$2')
+      .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
+      .replace(/^(\d{2})\.(\d{3})\.(\d{3})(\d)/, '$1.$2.$3/$4')
+      .replace(/^(\d{2})\.(\d{3})\.(\d{3})\/(\d{4})(\d)/, '$1.$2.$3/$4-$5')
+      .slice(0, 18);
+  }
+
+  function formatPhone(value: string) {
+    const digits = value.replace(/\D/g, '').slice(0, 11);
+    if (digits.length <= 2) return digits.length ? `(${digits}` : '';
+    if (digits.length <= 7) {
+      return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+    }
+    if (digits.length <= 10) {
+      return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+    }
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+  }
+
   async function checkDuplicate() {
     if (isEdit || !accountId) return;
     const value = phone.trim();
@@ -121,16 +175,34 @@ export function ContactForm({
     );
   }
 
+  function addPhone() {
+    setAdditionalPhones((prev) => [...prev, { phone: '', label: 'other' }]);
+  }
+
+  function removePhone(index: number) {
+    setAdditionalPhones((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function updateAdditionalPhone(index: number, phone: string) {
+    setAdditionalPhones((prev) =>
+      prev.map((p, i) => (i === index ? { ...p, phone } : p)),
+    );
+  }
+
+  function updateAdditionalPhoneLabel(index: number, label: string) {
+    setAdditionalPhones((prev) =>
+      prev.map((p, i) => (i === index ? { ...p, label } : p)),
+    );
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
     if (!phone.trim()) {
-      toast.error('O número de telefone é obrigatório');
+      toast.error('O número de telefone principal é obrigatório');
       return;
     }
 
-    // Hard-block an exact duplicate on create (the DB unique index is
-    // the real backstop; this avoids a round-trip + a raw error toast).
     if (!isEdit && dupMatch?.exact) {
       toast.error('Já existe um contato com este número de telefone');
       return;
@@ -155,6 +227,8 @@ export function ContactForm({
             name: name.trim() || null,
             phone: phone.trim(),
             email: email.trim() || null,
+            document: document.trim() || null,
+            address: address.trim() || null,
             company: company.trim() || null,
             updated_at: new Date().toISOString(),
           })
@@ -169,6 +243,8 @@ export function ContactForm({
             name: name.trim() || null,
             phone: phone.trim(),
             email: email.trim() || null,
+            document: document.trim() || null,
+            address: address.trim() || null,
             company: company.trim() || null,
           })
           .select('id')
@@ -196,14 +272,31 @@ export function ContactForm({
         }
       }
 
+      // Sync additional phones
+      if (contactId) {
+        await supabase
+          .from('contact_phones')
+          .delete()
+          .eq('contact_id', contactId);
+
+        const validPhones = additionalPhones.filter((p) => p.phone.trim());
+        if (validPhones.length > 0) {
+          const phoneRows = validPhones.map((p) => ({
+            contact_id: contactId!,
+            phone: p.phone.trim(),
+            label: p.label,
+          }));
+          const { error: phonesError } = await supabase
+            .from('contact_phones')
+            .insert(phoneRows);
+          if (phonesError) throw phonesError;
+        }
+      }
+
       toast.success(isEdit ? 'Contato atualizado' : 'Contato criado');
       onOpenChange(false);
       onSaved();
     } catch (err: unknown) {
-      // The unique index (migration 022) rejects a duplicate phone that
-      // slipped past the on-blur check (race, or a format that
-      // normalizes equal). Surface it as the friendly duplicate notice
-      // and, for new contacts, point the user at the existing record.
       if (isUniqueViolation(err)) {
         toast.error('Já existe um contato com este número de telefone');
         if (!isEdit && accountId) {
@@ -252,18 +345,58 @@ export function ContactForm({
           </div>
 
           <div className="space-y-2">
+            <Label htmlFor="cf-document" className="text-muted-foreground">
+              CPF / CNPJ
+            </Label>
+            <Input
+              id="cf-document"
+              value={document}
+              onChange={(e) => setDocument(formatDocument(e.target.value))}
+              placeholder="000.000.000-00"
+              className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="cf-company" className="text-muted-foreground">
+              Empresa
+            </Label>
+            <Input
+              id="cf-company"
+              value={company}
+              onChange={(e) => setCompany(e.target.value)}
+              placeholder="Empresa Ltda."
+              className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="cf-address" className="text-muted-foreground">
+              Endereço
+            </Label>
+            <Input
+              id="cf-address"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder="Rua, número, bairro, cidade"
+              className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+            />
+          </div>
+
+          {/* Primary phone */}
+          <div className="space-y-2">
             <Label htmlFor="cf-phone" className="text-muted-foreground">
-              Telefone <span className="text-red-400">*</span>
+              Telefone Principal <span className="text-red-400">*</span>
             </Label>
             <Input
               id="cf-phone"
-              value={phone}
+              value={formatPhone(phone)}
               onChange={(e) => {
-                setPhone(e.target.value);
+                setPhone(e.target.value.replace(/\D/g, ''));
                 if (dupMatch) setDupMatch(null);
               }}
               onBlur={checkDuplicate}
-              placeholder="+55 11 99999-9999"
+              placeholder="(11) 99999-9999"
               className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
             />
             {dupMatch ? (
@@ -294,9 +427,56 @@ export function ContactForm({
               </div>
             ) : (
               <p className="text-xs text-muted-foreground">
-                Inclua o código do país, ex: +55 para Brasil
+                Inclua o DDD do estado, ex: 11 para São Paulo
               </p>
             )}
+          </div>
+
+          {/* Additional phones */}
+          <div className="space-y-2">
+            <Label className="text-muted-foreground">
+              Telefones Adicionais
+            </Label>
+            {additionalPhones.map((item, index) => (
+              <div key={index} className="flex items-start gap-2">
+                <div className="flex-1">
+                  <Input
+                    value={formatPhone(item.phone)}
+                    onChange={(e) =>
+                      updateAdditionalPhone(index, e.target.value.replace(/\D/g, ''))
+                    }
+                    placeholder="(11) 99999-9999"
+                    className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+                  />
+                </div>
+                <select
+                  value={item.label}
+                  onChange={(e) => updateAdditionalPhoneLabel(index, e.target.value)}
+                  className="h-9 rounded-md border border-border bg-muted px-2 text-xs text-foreground"
+                >
+                  <option value="commercial">Comercial</option>
+                  <option value="home">Residencial</option>
+                  <option value="other">Outro</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={() => removePhone(index)}
+                  className="mt-1 text-muted-foreground hover:text-red-400 transition-colors"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
+            ))}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={addPhone}
+              className="border-border text-muted-foreground hover:bg-muted w-full"
+            >
+              <Plus className="size-3.5" />
+              Adicionar telefone
+            </Button>
           </div>
 
           <div className="space-y-2">
@@ -309,19 +489,6 @@ export function ContactForm({
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="joao@exemplo.com"
-              className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="cf-company" className="text-muted-foreground">
-              Empresa
-            </Label>
-            <Input
-              id="cf-company"
-              value={company}
-              onChange={(e) => setCompany(e.target.value)}
-              placeholder="Empresa Ltda."
               className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
             />
           </div>

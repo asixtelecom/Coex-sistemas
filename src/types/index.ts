@@ -99,6 +99,8 @@ export interface Contact {
   phone_normalized?: string;
   name?: string;
   email?: string;
+  document?: string;
+  address?: string;
   company?: string;
   avatar_url?: string;
   created_at: string;
@@ -135,6 +137,15 @@ export interface ContactCustomValue {
   contact_id: string;
   custom_field_id: string;
   value?: string;
+}
+
+export interface ContactPhone {
+  id: string;
+  contact_id: string;
+  phone: string;
+  phone_normalized?: string;
+  label: 'primary' | 'commercial' | 'home' | 'other';
+  created_at: string;
 }
 
 export interface ContactNote {
@@ -189,6 +200,8 @@ export interface Message {
   template_name?: string;
   message_id?: string;
   status: MessageStatus;
+  /** When the recipient read this message (WhatsApp double-check / read receipt). */
+  recipient_read_at?: string;
   created_at: string;
   reply_to_message_id?: string;
   /**
@@ -330,6 +343,7 @@ export interface Deal {
   notes?: string;
   expected_close_date?: string;
   end_date?: string;
+  property_type?: string;
   origin_address?: string;
   destination_address?: string;
   status?: DealStatus;
