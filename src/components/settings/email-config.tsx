@@ -206,20 +206,95 @@ export function EmailConfig() {
 
     setSaving(true);
     try {
-      if (currentMailbox.id) {
+      let mailboxId = currentMailbox.id;
+      if (mailboxId) {
         const { error } = await supabase
           .from('mailboxes')
           .update(currentMailbox)
-          .eq('id', currentMailbox.id);
+          .eq('id', mailboxId);
         if (error) throw error;
         toast.success('Caixa de e-mail atualizada');
       } else {
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('mailboxes')
-          .insert({ ...currentMailbox, account_id: accountId });
+          .insert({ ...currentMailbox, account_id: accountId })
+          .select('id')
+          .single();
         if (error) throw error;
+        mailboxId = data.id;
         toast.success('Caixa de e-mail criada');
       }
+
+      const canTestImap =
+        currentMailbox.imap_host &&
+        currentMailbox.imap_port &&
+        currentMailbox.imap_username &&
+        currentMailbox.imap_password &&
+        currentMailbox.imap_type === 'general_imap';
+
+      if (canTestImap && mailboxId) {
+        const res = await fetch('/api/mailboxes/test-imap', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mailbox_id: mailboxId,
+            host: currentMailbox.imap_host,
+            port: currentMailbox.imap_port,
+            username: currentMailbox.imap_username,
+            password: currentMailbox.imap_password,
+            ssl: currentMailbox.imap_ssl,
+          }),
+        });
+
+        const result = await res.json();
+
+        await supabase
+          .from('mailboxes')
+          .update({ imap_authorized: result.authorized })
+          .eq('id', mailboxId);
+
+        if (!result.authorized) {
+          toast.error(`Falha na autorização IMAP: ${result.error || 'Credenciais inválidas'}`);
+        }
+      }
+
+      const canTestSmtp =
+        currentMailbox.smtp_host &&
+        currentMailbox.smtp_port &&
+        currentMailbox.smtp_username &&
+        currentMailbox.smtp_password &&
+        currentMailbox.email_provider === 'smtp';
+
+      if (canTestSmtp && mailboxId) {
+        const res = await fetch('/api/mailboxes/test-smtp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mailbox_id: mailboxId,
+            host: currentMailbox.smtp_host,
+            port: currentMailbox.smtp_port,
+            username: currentMailbox.smtp_username,
+            password: currentMailbox.smtp_password,
+            ssl: currentMailbox.smtp_ssl,
+          }),
+        });
+
+        const result = await res.json();
+
+        await supabase
+          .from('mailboxes')
+          .update({ smtp_authorized: result.authorized })
+          .eq('id', mailboxId);
+
+        if (!result.authorized) {
+          toast.error(`Falha na autorização SMTP: ${result.error || 'Credenciais inválidas'}`);
+        }
+      }
+
+      if (canTestImap || canTestSmtp) {
+        toast.success('Configuração de e-mail salva e testada com sucesso');
+      }
+
       setIsDialogOpen(false);
       setCurrentMailbox({
         title: '',
@@ -360,17 +435,16 @@ export function EmailConfig() {
                       </span>
                     </TableCell>
                     <TableCell>
-                      {mailbox.imap_authorized && mailbox.smtp_authorized ? (
-                        <span className="inline-flex items-center gap-1 text-green-500">
-                          <CheckCircle2 className="size-4" />
-                          Autorizada
+                      <div className="flex flex-col gap-1 text-xs">
+                        <span className={`inline-flex items-center gap-1 ${mailbox.imap_authorized ? 'text-green-500' : 'text-amber-500'}`}>
+                          {mailbox.imap_authorized ? <CheckCircle2 className="size-3.5" /> : <XCircle className="size-3.5" />}
+                          IMAP {mailbox.imap_authorized ? 'Autorizado' : 'Não autorizado'}
                         </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-amber-500">
-                          <XCircle className="size-4" />
-                          Não autorizada
+                        <span className={`inline-flex items-center gap-1 ${mailbox.smtp_authorized ? 'text-green-500' : 'text-amber-500'}`}>
+                          {mailbox.smtp_authorized ? <CheckCircle2 className="size-3.5" /> : <XCircle className="size-3.5" />}
+                          SMTP {mailbox.smtp_authorized ? 'Autorizado' : 'Não autorizado'}
                         </span>
-                      )}
+                      </div>
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">

@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState, useRef } from 'react'
+import { useCallback, useEffect, useState, useRef, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/use-auth'
 import { formatCurrency } from '@/lib/currency'
@@ -18,6 +18,7 @@ import {
   loadPipelineDonut,
   loadResponseTime,
   loadConversationsByChannel,
+  type DashboardFilter,
 } from '@/lib/dashboard/queries'
 import type {
   ActivityItem,
@@ -39,14 +40,21 @@ import { ChannelStats } from '@/components/dashboard/channel-stats'
 type RangeDays = 7 | 30 | 90
 
 export default function DashboardPage() {
-  const { defaultCurrency, canEditSettings } = useAuth()
+  const { defaultCurrency, canEditSettings, user, profile, isAgent, profileLoading } = useAuth()
+
+  const agentFilter = useMemo<DashboardFilter | undefined>(() => {
+    if (!isAgent) return undefined
+    return {
+      userId: user?.id,
+      profileId: profile?.id,
+      isAgent: true,
+    }
+  }, [isAgent, user?.id, profile?.id])
+
   const [metrics, setMetrics] = useState<MetricsBundle | null>(null)
   const [metricsLoading, setMetricsLoading] = useState(true)
 
   const [range, setRange] = useState<RangeDays>(30)
-  // Keep a cache per range so switching tabs doesn't re-fetch what we
-  // already have. Ranges the user hasn't opened yet stay null and
-  // trigger a fetch on first view.
   const [series, setSeries] = useState<Record<RangeDays, ConversationsSeriesPoint[] | null>>({
     7: null,
     30: null,
@@ -73,60 +81,54 @@ export default function DashboardPage() {
   const loadAll = useCallback(() => {
     const db = createClient()
 
-    // Kick everything off in parallel. Each block has its own
-    // setState + finally so a slow query doesn't hold up faster
-    // sections — each widget shows its own skeleton independently.
-    void loadMetrics(db)
+    void loadMetrics(db, agentFilter)
       .then((m) => setMetrics(m))
       .catch((err) => console.error('[dashboard] metrics failed:', err))
       .finally(() => setMetricsLoading(false))
 
-    void loadConversationsSeries(db, 30)
+    void loadConversationsSeries(db, 30, agentFilter)
       .then((s) => setSeries((prev) => ({ ...prev, 30: s })))
       .catch((err) => console.error('[dashboard] series failed:', err))
       .finally(() => setSeriesLoading(false))
 
-    void loadPipelineDonut(db)
+    void loadPipelineDonut(db, agentFilter)
       .then((p) => setPipeline(p))
       .catch((err) => console.error('[dashboard] pipeline failed:', err))
       .finally(() => setPipelineLoading(false))
 
-    void loadResponseTime(db)
+    void loadResponseTime(db, agentFilter)
       .then((r) => setResponseTime(r))
       .catch((err) => console.error('[dashboard] response time failed:', err))
       .finally(() => setResponseTimeLoading(false))
 
-    void loadConversationsByChannel(db)
+    void loadConversationsByChannel(db, agentFilter)
       .then((c) => setChannelStats(c))
       .catch((err) => console.error('[dashboard] channel stats failed:', err))
       .finally(() => setChannelStatsLoading(false))
 
-    // Fetch up to 50 so the biggest page-size option in the feed
-    // (50 rows) is already in memory — switching sizes then becomes
-    // a pure client-side slice with no extra round trip.
-    void loadActivity(db, 50)
+    void loadActivity(db, 50, agentFilter)
       .then((a) => setActivity(a))
       .catch((err) => console.error('[dashboard] activity failed:', err))
       .finally(() => setActivityLoading(false))
-  }, [])
+  }, [agentFilter])
 
   const refreshData = useCallback(() => {
     const db = createClient()
-    void loadMetrics(db).then((m) => setMetrics(m))
-    void loadPipelineDonut(db).then((p) => setPipeline(p))
-    void loadActivity(db, 50).then((a) => setActivity(a))
-    void loadConversationsByChannel(db).then((c) => setChannelStats(c))
-  }, [])
+    void loadMetrics(db, agentFilter).then((m) => setMetrics(m))
+    void loadPipelineDonut(db, agentFilter).then((p) => setPipeline(p))
+    void loadActivity(db, 50, agentFilter).then((a) => setActivity(a))
+    void loadConversationsByChannel(db, agentFilter).then((c) => setChannelStats(c))
+  }, [agentFilter])
 
   useEffect(() => {
+    if (profileLoading) return
     loadAll()
-  }, [loadAll])
+  }, [loadAll, profileLoading])
 
   // Realtime subscriptions
   useEffect(() => {
     const db = createClient()
 
-    // Subscribe to deals changes (for metrics and pipeline)
     dealsChannelRef.current = db
       .channel('deals-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'deals' }, () => {
@@ -134,7 +136,6 @@ export default function DashboardPage() {
       })
       .subscribe()
 
-    // Subscribe to pipeline stages changes
     stagesChannelRef.current = db
       .channel('stages-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'pipeline_stages' }, () => {
@@ -142,17 +143,15 @@ export default function DashboardPage() {
       })
       .subscribe()
 
-    // Subscribe to messages changes (for conversations chart and response time)
     messagesChannelRef.current = db
       .channel('messages-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => {
         const db2 = createClient()
-        void loadConversationsSeries(db2, range).then((s) => setSeries((prev) => ({ ...prev, [range]: s })))
-        void loadResponseTime(db2).then((r) => setResponseTime(r))
+        void loadConversationsSeries(db2, range, agentFilter).then((s) => setSeries((prev) => ({ ...prev, [range]: s })))
+        void loadResponseTime(db2, agentFilter).then((r) => setResponseTime(r))
       })
       .subscribe()
 
-    // Subscribe to contacts changes (for metrics and activity)
     contactsChannelRef.current = db
       .channel('contacts-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'contacts' }, () => {
@@ -160,7 +159,6 @@ export default function DashboardPage() {
       })
       .subscribe()
 
-    // Subscribe to conversations changes (for channel stats)
     const convChannel = db
       .channel('conversations-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations' }, () => {
@@ -175,24 +173,20 @@ export default function DashboardPage() {
       void contactsChannelRef.current?.unsubscribe()
       void convChannel.unsubscribe()
     }
-  }, [refreshData, range])
+  }, [refreshData, range, agentFilter])
 
-  // Range switch handler — kept in an event callback (not an effect)
-  // so the setState calls stay out of the react-hooks/set-state-in-effect
-  // rule's way. The cached bucket check means switching back to a
-  // previously-viewed range is instant and doesn't re-fetch.
   const handleRangeChange = useCallback(
     (r: RangeDays) => {
       setRange(r)
       if (series[r] !== null) return
       setSeriesLoading(true)
       const db = createClient()
-      loadConversationsSeries(db, r)
+      loadConversationsSeries(db, r, agentFilter)
         .then((s) => setSeries((prev) => ({ ...prev, [r]: s })))
         .catch((err) => console.error('[dashboard] series failed:', err))
         .finally(() => setSeriesLoading(false))
     },
-    [series],
+    [series, agentFilter],
   )
 
   return (

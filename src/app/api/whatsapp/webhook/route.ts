@@ -341,6 +341,11 @@ async function handleStatusUpdate(status: {
     console.error('Error updating message status:', msgErr)
   }
 
+    // 1.5) When status is read, set recipient_read_at for Nao Visualizadas tracking
+    if (status.status === "read") {
+      const ts = new Date(parseInt(status.timestamp) * 1000).toISOString()
+      await supabaseAdmin().from("messages").update({ recipient_read_at: ts }).eq("message_id", status.id)
+    }
   // 2) Mirror onto broadcast_recipients via whatsapp_message_id
   //    (added in migration 003). The aggregate trigger on
   //    broadcast_recipients re-derives the parent broadcast's

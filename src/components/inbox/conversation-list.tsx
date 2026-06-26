@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus, Profile } from "@/types";
-import { Search, ChevronDown, User } from "lucide-react";
+import Link from "next/link";
+import { Search, ChevronDown, User, BarChart3 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { Input } from "@/components/ui/input";
 import {
@@ -108,6 +109,7 @@ export function ConversationList({
   onDeselect,
 }: ConversationListProps) {
   const [search, setSearch] = useState("");
+  const [unreadExpanded, setUnreadExpanded] = useState(false);
   const [filter, setFilter] = useState<InboxFilter>("all");
   const [channelFilter, setChannelFilter] = useState<ChannelFilter>("all");
   const [loading, setLoading] = useState(true);
@@ -214,6 +216,7 @@ export function ConversationList({
         const lastMsg = c.last_message_text?.toLowerCase() ?? "";
         return name.includes(q) || phone.includes(q) || lastMsg.includes(q);
       });
+      result = result.slice(0, 99);
     }
 
     return result;
@@ -252,14 +255,20 @@ export function ConversationList({
     <div className="flex h-full w-full flex-col border-r border-border bg-card lg:w-80">
       {/* Search + Filter */}
       <div className="space-y-2 border-b border-border p-3">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={handleSearchChange}
-            placeholder="Pesquisar conversas..."
-            className="border-border bg-muted pl-9 text-sm text-foreground placeholder-muted-foreground focus:border-primary/50"
-          />
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={handleSearchChange}
+              placeholder="Pesquisar conversas..."
+              className="border-border bg-muted pl-9 text-sm text-foreground placeholder-muted-foreground focus:border-primary/50"
+            />
+          </div>
+          <Link href="/inbox/stats" className="flex shrink-0 items-center gap-1.5 rounded-md border border-border bg-muted px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors" title="Estatisticas">
+            <BarChart3 className="h-3.5 w-3.5" />
+            Stats
+          </Link>
         </div>
 
         <DropdownMenu>
@@ -334,7 +343,7 @@ export function ConversationList({
             <p className="text-sm text-muted-foreground">Nenhuma conversa encontrada</p>
           </div>
         ) : (
-          <div className="flex flex-col">
+          <div className={cn("flex flex-col", search.trim().length > 0 && "flex-wrap gap-3 p-3 justify-center flex-row")}>
             {filtered.map((conv) => (
               <ConversationItem
                 key={conv.id}
@@ -343,13 +352,161 @@ export function ConversationList({
                 onSelect={handleSelect}
                 profiles={profiles}
                 onAssignChange={onAssignChange}
+                isSearching={search.trim().length > 0}
               />
             ))}
           </div>
         )}
       </ScrollArea>
+
+      {/* Nao Visualizadas section - fixed at the bottom, always visible */}
+      {filter === 'all' && !search.trim() && (
+        <div className="shrink-0 border-t border-border bg-card">
+          <button
+            onClick={() => setUnreadExpanded(!unreadExpanded)}
+            className="flex w-full items-center justify-between px-3 py-2 text-left transition-colors hover:bg-muted/30"
+          >
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+              Nao Visualizadas
+            </h3>
+            <svg
+              className={`h-3 w-3 text-muted-foreground transition-transform ${unreadExpanded ? 'rotate-180' : ''}`}
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </button>
+          {unreadExpanded && (
+            <UnreadByRecipientSection conversations={conversations} onSelect={handleSelect} />
+          )}
+        </div>
+      )}
     </div>
   );
+}
+
+function UnreadByRecipientSection({
+  conversations,
+  onSelect,
+}: {
+  conversations: Conversation[]
+  onSelect: (conv: Conversation) => void
+}) {
+  const [unreadConvs, setUnreadConvs] = useState<(Conversation & { last_sender_type?: string; recipient_read_at?: string | null })[]>([])
+  const [loading, setLoading] = useState(true)
+  const supabase = createClient()
+
+  useEffect(() => {
+    if (!conversations.length) {
+      setUnreadConvs([])
+      setLoading(false)
+      return
+    }
+    const convIds = conversations.map((c) => c.id)
+    // Fetch messages where sender_type = 'agent' AND recipient_read_at IS NULL,
+    // getting the latest message per conversation
+    const fetchUnread = async () => {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('conversation_id, sender_type, recipient_read_at, created_at')
+        .in('conversation_id', convIds)
+        .eq('sender_type', 'agent')
+        .is('recipient_read_at', null)
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.error('Error fetching unread messages:', error)
+        setLoading(false)
+        return
+      }
+
+      if (!data || data.length === 0) {
+        setUnreadConvs([])
+        setLoading(false)
+        return
+      }
+
+      // Group by conversation and get the latest message per conversation
+      const latestPerConv = new Map<string, typeof data[0]>()
+      for (const msg of data) {
+        if (!latestPerConv.has(msg.conversation_id)) {
+          latestPerConv.set(msg.conversation_id, msg)
+        }
+      }
+
+      // Filter conversations to only those with unread agent messages
+      const withUnread = conversations.filter((c) => latestPerConv.has(c.id))
+      setUnreadConvs(withUnread as any[])
+      setLoading(false)
+    }
+    fetchUnread()
+  }, [conversations])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-4">
+        <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
+    )
+  }
+
+  if (unreadConvs.length === 0) {
+    return (
+      <div className="px-3 py-4 text-center">
+        <p className="text-[10px] text-muted-foreground/50">
+          Nenhuma conversa com mensagem nao visualizada
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col">
+      {unreadConvs.slice(0, 5).map((conv) => {
+        const displayName = conv.contact?.name || conv.contact?.phone || 'Desconhecido'
+        const initials = displayName.charAt(0).toUpperCase()
+        return (
+          <button
+            key={conv.id}
+            onClick={() => onSelect(conv)}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/50 rounded-sm"
+          >
+            <div className="relative flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted/70 text-[10px] font-medium text-muted-foreground">
+              {conv.contact?.avatar_url ? (
+                <img src={conv.contact.avatar_url} alt={displayName} className="h-6 w-6 rounded-full object-cover" />
+              ) : initials}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1">
+                <span className="truncate text-xs font-medium text-foreground/80">{displayName}</span>
+                <span className="shrink-0 text-[9px] text-muted-foreground/40">
+                  {conv.last_message_at ? formatDistanceToNow(new Date(conv.last_message_at), { addSuffix: false }) : ''}
+                </span>
+              </div>
+              <p className="truncate text-[10px] text-muted-foreground/50">
+                {conv.last_message_text || 'Nenhuma mensagem ainda'}
+              </p>
+            </div>
+            <span className="shrink-0 rounded border border-amber-200/30 bg-amber-500/10 px-1 py-0.5 text-[8px] font-medium text-amber-600/70">
+              1 palito
+            </span>
+          </button>
+        )
+      })}
+      {unreadConvs.length > 5 && (
+        <button className="px-3 py-1.5 text-[10px] text-primary hover:underline text-left">
+          Ver todas ({unreadConvs.length})
+        </button>
+      )}
+    </div>
+  )
 }
 
 interface ConversationItemProps {
@@ -358,6 +515,7 @@ interface ConversationItemProps {
   onSelect: (conversation: Conversation) => void;
   profiles: Profile[];
   onAssignChange: (conversationId: string, agentId: string | null) => void;
+  isSearching?: boolean;
 }
 
 function ConversationItem({
@@ -366,6 +524,7 @@ function ConversationItem({
   onSelect,
   profiles,
   onAssignChange,
+  isSearching = false,
 }: ConversationItemProps) {
   const contact = conversation.contact;
   const displayName = contact?.name || contact?.phone || "Desconhecido";
@@ -395,98 +554,114 @@ function ConversationItem({
       <button
         onClick={handleClick}
         className={cn(
-          "flex w-full items-start gap-3 px-3 py-3 text-left transition-colors hover:bg-muted/50",
-          isActive && "border-l-2 border-primary bg-muted/70"
+          "flex w-full items-center gap-3 px-3 py-3 text-left transition-colors hover:bg-muted/50",
+          isActive && "border-l-2 border-primary bg-muted/70",
+          isSearching && "flex-col items-center gap-1 py-2 px-2 w-auto"
         )}
       >
         {/* Avatar */}
-        <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground">
+        <div className={cn(
+          "relative flex shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground",
+          isSearching ? "h-9 w-9" : "h-10 w-10"
+        )}>
           {contact?.avatar_url ? (
             <img
               src={contact.avatar_url}
               alt={displayName}
-              className="h-10 w-10 rounded-full object-cover"
+              className={cn(
+                "rounded-full object-cover",
+                isSearching ? "h-9 w-9" : "h-10 w-10"
+              )}
             />
           ) : (
-            initials
+            <span className={cn(isSearching ? "text-xs" : "text-sm")}>{initials}</span>
           )}
           {conversation.channel?.type && (
             <span
-              className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-background p-0.5 shadow-sm"
+              className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-background p-0.5 shadow-sm"
               title={conversation.channel.type}
             >
-              <ChannelIcon type={conversation.channel.type} className="h-3 w-3" />
+              <ChannelIcon type={conversation.channel.type} className="h-2 w-2" />
             </span>
           )}
         </div>
 
         {/* Content */}
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-2">
-            <span className="truncate text-sm font-medium text-foreground">
-              {displayName}
-            </span>
-            <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo}</span>
-          </div>
-          <div className="mt-0.5 flex items-center justify-between gap-2">
-            <p className="truncate text-xs text-muted-foreground">
-              {conversation.last_message_text || "Nenhuma mensagem ainda"}
-            </p>
-            <div className="flex shrink-0 items-center gap-1.5">
-              {conversation.unread_count > 0 && (
-                <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
-                  {conversation.unread_count}
-                </span>
-              )}
-              <span
-                className={cn(
-                  "h-2 w-2 rounded-full",
-                  STATUS_COLORS[conversation.status]
+        {!isSearching && (
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-2">
+              <span className="truncate text-sm font-medium text-foreground">
+                {displayName}
+              </span>
+              <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo}</span>
+            </div>
+            <div className="mt-0.5 flex items-center justify-between gap-2">
+              <p className="truncate text-xs text-muted-foreground">
+                {conversation.last_message_text || "Nenhuma mensagem ainda"}
+              </p>
+              <div className="flex shrink-0 items-center gap-1.5">
+                {conversation.unread_count > 0 && (
+                  <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
+                    {conversation.unread_count}
+                  </span>
                 )}
-                title={conversation.status}
-              />
+                <span
+                  className={cn(
+                    "h-2 w-2 rounded-full",
+                    STATUS_COLORS[conversation.status]
+                  )}
+                  title={conversation.status}
+                />
+              </div>
             </div>
           </div>
-        </div>
+        )}
+        {isSearching && (
+          <span className="max-w-[4.5rem] truncate text-[10px] text-muted-foreground text-center leading-tight">
+            {displayName}
+          </span>
+        )}
       </button>
 
       {/* Agent Assignment Badge */}
-      <div className="px-3 pb-3">
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            onClick={(e) => e.stopPropagation()}
-            className={cn(
-              "inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full transition-colors",
-              assignedAgent
-                ? "bg-primary/10 text-primary"
-                : "bg-muted text-muted-foreground hover:bg-muted/80"
-            )}
-          >
-            <User className="h-3 w-3" />
-            <span>
-              {assignedAgent?.full_name || assignedAgent?.email || "Atribuir agente"}
-            </span>
-            <ChevronDown className="h-2 w-2" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent className="border-border bg-popover">
-            <DropdownMenuItem
-              onClick={(e) => handleAssignAgent(e, null)}
-              className="text-sm"
+      {!isSearching && (
+        <div className="px-3 pb-3">
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              onClick={(e) => e.stopPropagation()}
+              className={cn(
+                "inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full transition-colors",
+                assignedAgent
+                  ? "bg-primary/10 text-primary"
+                  : "bg-muted text-muted-foreground hover:bg-muted/80"
+              )}
             >
-              Sem atribuição
-            </DropdownMenuItem>
-            {profiles.map((profile) => (
+              <User className="h-3 w-3" />
+              <span>
+                {assignedAgent?.full_name || assignedAgent?.email || "Atribuir agente"}
+              </span>
+              <ChevronDown className="h-2 w-2" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="border-border bg-popover">
               <DropdownMenuItem
-                key={profile.user_id}
-                onClick={(e) => handleAssignAgent(e, profile.user_id)}
+                onClick={(e) => handleAssignAgent(e, null)}
                 className="text-sm"
               >
-                {profile.full_name || profile.email}
+                Sem atribuição
               </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+              {profiles.map((profile) => (
+                <DropdownMenuItem
+                  key={profile.user_id}
+                  onClick={(e) => handleAssignAgent(e, profile.user_id)}
+                  className="text-sm"
+                >
+                  {profile.full_name || profile.email}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      )}
     </div>
   );
 }

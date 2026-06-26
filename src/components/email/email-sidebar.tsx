@@ -1,8 +1,29 @@
 "use client"
 
-import { Pencil, Inbox, Send, Star, AlertTriangle, FileText, Trash2, FileJson } from "lucide-react"
+import { useState } from "react"
+import { Pencil, Inbox, Send, Star, AlertTriangle, FileText, Trash2, FileJson, FolderIcon, ChevronDown, Check, Plus, Edit3 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu"
+
+export interface MailboxItem {
+  id: number
+  title: string
+  color: string
+}
+
+export interface EmailFolder {
+  id: number
+  name: string
+  color: string
+  count?: number
+}
 
 interface Folder {
   id: string
@@ -11,20 +32,97 @@ interface Folder {
   count?: number
 }
 
+const FOLDER_COLORS = [
+  "#6366f1", "#ef4444", "#f97316", "#eab308", "#22c55e",
+  "#06b6d4", "#3b82f6", "#8b5cf6", "#ec4899", "#14b8a6",
+]
+
 interface EmailSidebarProps {
   folders: Folder[]
   activeFolder: string
   onFolderChange: (folder: string) => void
   onCompose: () => void
   collapsed?: boolean
+  mailboxes?: MailboxItem[]
+  selectedMailboxId?: number | null
+  onMailboxChange?: (id: number) => void
+  emailFolders?: EmailFolder[]
+  onFolderSelect?: (folderId: number) => void
+  activeEmailFolder?: number | null
+  onCreateFolder?: (name: string, color: string) => Promise<void>
+  onUpdateFolder?: (id: number, name: string, color: string) => Promise<void>
+  onDeleteFolder?: (id: number) => Promise<void>
 }
 
-export function EmailSidebar({ folders, activeFolder, onFolderChange, onCompose, collapsed }: EmailSidebarProps) {
+export function EmailSidebar({
+  folders, activeFolder, onFolderChange, onCompose, collapsed,
+  mailboxes, selectedMailboxId, onMailboxChange,
+  emailFolders, onFolderSelect, activeEmailFolder,
+  onCreateFolder, onUpdateFolder, onDeleteFolder,
+}: EmailSidebarProps) {
+  const selectedMailbox = mailboxes?.find((m) => m.id === selectedMailboxId) ?? null
+
+  const [creating, setCreating] = useState(false)
+  const [newName, setNewName] = useState("")
+  const [newColor, setNewColor] = useState(FOLDER_COLORS[0])
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editName, setEditName] = useState("")
+  const [editColor, setEditColor] = useState("")
+
+  const handleCreate = async () => {
+    if (!newName.trim() || !onCreateFolder) return
+    await onCreateFolder(newName.trim(), newColor)
+    setNewName("")
+    setNewColor(FOLDER_COLORS[0])
+    setCreating(false)
+  }
+
+  const handleEdit = async () => {
+    if (!editName.trim() || !onUpdateFolder || editingId === null) return
+    await onUpdateFolder(editingId, editName.trim(), editColor)
+    setEditingId(null)
+    setEditName("")
+  }
+
+  const handleDelete = async (id: number) => {
+    if (!onDeleteFolder) return
+    if (confirm("Excluir esta pasta?")) await onDeleteFolder(id)
+  }
+
   return (
     <aside className={cn(
       "flex flex-col gap-2 border-r border-border bg-card p-3",
       collapsed ? "w-16 items-center" : "w-56"
     )}>
+      {mailboxes && mailboxes.length > 0 && !collapsed && (
+        <DropdownMenu>
+          <DropdownMenuTrigger className="flex items-center gap-2 rounded-md border border-input bg-background px-3 py-1.5 text-sm shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring data-disabled:pointer-events-none data-disabled:opacity-50 data-popup-open:bg-accent data-popup-open:text-accent-foreground w-full justify-between">
+            <span className="flex items-center gap-2 truncate">
+              <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: selectedMailbox?.color ?? '#888' }} />
+              <span className="truncate">{selectedMailbox?.title ?? 'Selecionar caixa'}</span>
+            </span>
+            <ChevronDown className="size-4 shrink-0 opacity-50" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" side="top" className="w-[200px]">
+            {mailboxes.map((mb) => (
+              <DropdownMenuItem
+                key={mb.id}
+                onClick={() => onMailboxChange?.(mb.id)}
+                className="flex items-center gap-2"
+              >
+                <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: mb.color }} />
+                <span className="flex-1 truncate">{mb.title}</span>
+                {selectedMailboxId === mb.id && <Check className="size-3.5 shrink-0" />}
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => window.open("/settings", "_self")} className="flex items-center gap-2 text-muted-foreground">
+              <Plus className="size-3.5" />
+              <span>Nova caixa</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
       <Button onClick={onCompose} className={cn(
         "flex items-center gap-2",
         collapsed ? "w-10 h-10 p-0 justify-center" : "w-full"
@@ -63,6 +161,108 @@ export function EmailSidebar({ folders, activeFolder, onFolderChange, onCompose,
           )
         })}
       </nav>
+
+      {/* Always show the Pastas section, even when empty */}
+      {!collapsed && (
+        <>
+          <div className="mt-2 mb-1 flex items-center justify-between">
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Pastas</span>
+            <button
+              onClick={() => setCreating(true)}
+              className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              title="Nova pasta"
+            >
+              <Plus className="size-3.5" />
+            </button>
+          </div>
+          <nav className="flex flex-col gap-1">
+            {creating && (
+              <div className="flex flex-col gap-2 rounded-lg border border-border p-2 bg-muted/30">
+                <input
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="Nome da pasta"
+                  className="w-full bg-background border border-input rounded px-2 py-1 text-xs outline-none focus:border-primary"
+                  autoFocus
+                />
+                <div className="flex items-center gap-1 flex-wrap">
+                  {FOLDER_COLORS.map((c) => (
+                    <button key={c} onClick={() => setNewColor(c)} className={cn("size-4 rounded-full border-2", newColor === c ? "border-foreground" : "border-transparent")} style={{ backgroundColor: c }} />
+                  ))}
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button size="sm" variant="default" className="h-6 text-xs px-2" onClick={handleCreate}>Criar</Button>
+                  <Button size="sm" variant="ghost" className="h-6 text-xs px-2" onClick={() => setCreating(false)}>Cancelar</Button>
+                </div>
+              </div>
+            )}
+            {(!emailFolders || emailFolders.length === 0) && !creating && (
+              <p className="text-xs text-muted-foreground px-3 py-2">
+                Nenhuma pasta ainda. Clique em + para criar.
+              </p>
+            )}
+            {emailFolders?.map((ef) => (
+              editingId === ef.id ? (
+                <div key={ef.id} className="flex flex-col gap-2 rounded-lg border border-border p-2 bg-muted/30">
+                  <input
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="w-full bg-background border border-input rounded px-2 py-1 text-xs outline-none focus:border-primary"
+                    autoFocus
+                  />
+                  <div className="flex items-center gap-1 flex-wrap">
+                    {FOLDER_COLORS.map((c) => (
+                      <button key={c} onClick={() => setEditColor(c)} className={cn("size-4 rounded-full border-2", editColor === c ? "border-foreground" : "border-transparent")} style={{ backgroundColor: c }} />
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button size="sm" variant="default" className="h-6 text-xs px-2" onClick={handleEdit}>Salvar</Button>
+                    <Button size="sm" variant="ghost" className="h-6 text-xs px-2" onClick={() => setEditingId(null)}>Cancelar</Button>
+                  </div>
+                </div>
+              ) : (
+                <div key={ef.id} className="group flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-colors cursor-pointer hover:bg-muted"
+                  onClick={() => onFolderSelect?.(ef.id)}
+                >
+                  <span className={cn(
+                    "size-2 shrink-0 rounded-full",
+                    activeEmailFolder === ef.id && "ring-2 ring-offset-1 ring-offset-card"
+                  )}
+                    style={{ backgroundColor: ef.color }}
+                  />
+                  <span className={cn(
+                    "flex-1 text-left truncate",
+                    activeEmailFolder === ef.id ? "text-primary font-medium" : "text-muted-foreground"
+                  )}>
+                    {ef.name}
+                  </span>
+                  {ef.count !== undefined && ef.count > 0 && (
+                    <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary/10 px-1.5 text-[10px] font-medium text-primary">
+                      {ef.count}
+                    </span>
+                  )}
+                  <div className="hidden group-hover:flex items-center gap-0.5">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setEditingId(ef.id); setEditName(ef.name); setEditColor(ef.color) }}
+                      className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                      title="Editar"
+                    >
+                      <Edit3 className="size-3" />
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleDelete(ef.id) }}
+                      className="p-0.5 rounded text-muted-foreground hover:text-red-500 hover:bg-muted transition-colors"
+                      title="Excluir"
+                    >
+                      <Trash2 className="size-3" />
+                    </button>
+                  </div>
+                </div>
+              )
+            ))}
+          </nav>
+        </>
+      )}
     </aside>
   )
 }

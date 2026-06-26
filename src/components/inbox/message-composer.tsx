@@ -636,6 +636,16 @@ export function MessageComposer({
             />
           </div>
 
+          <button
+            type="button"
+            onClick={() => void startRecording()}
+            disabled={inputsDisabled || busy || recording}
+            title="Gravar nota de voz"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30"
+          >
+            <Mic className="h-4 w-4" />
+          </button>
+
           <GatedButton
             size="sm"
             canAct={!readOnly}

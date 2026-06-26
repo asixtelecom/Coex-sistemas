@@ -25,6 +25,7 @@ export interface EmailItem {
   files: string | null
   status: string
   email_labels: string | null
+  folder_id: number | null
 }
 
 interface EmailListProps {

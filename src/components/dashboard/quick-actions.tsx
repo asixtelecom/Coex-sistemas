@@ -43,7 +43,7 @@ export function QuickActions({ minimal = false }: { minimal?: boolean }) {
 
   const BASE_ACTIONS: Action[] = [
     { label: 'Novo Contato', href: '/contacts', icon: UserPlus, tint: 'text-primary' },
-    { label: 'Novo Negócio', href: '/pipelines', icon: Briefcase, tint: 'text-blue-400' },
+    { label: 'Tipo de Serviços', href: '/pipelines', icon: Briefcase, tint: 'text-blue-400' },
     { label: 'Nova Transmissão', href: '/broadcasts/new', icon: Radio, tint: 'text-amber-400' },
     { label: 'Nova Automação', href: '/automations/new', icon: Zap, tint: 'text-primary' },
   ]

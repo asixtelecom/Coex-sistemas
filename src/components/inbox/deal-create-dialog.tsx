@@ -65,7 +65,7 @@ export function DealCreateDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle>Novo Negócio</DialogTitle>
+          <DialogTitle>Tipo de Serviços</DialogTitle>
           <DialogDescription>
             Preencha os dados para {contactName}
           </DialogDescription>

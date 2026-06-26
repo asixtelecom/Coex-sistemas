@@ -24,14 +24,27 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { error } = await supabase
+    const { data: msg, error: fetchError } = await supabase
+      .from("internal_messages")
+      .select("sender_id")
+      .eq("id", id)
+      .single();
+
+    if (fetchError || !msg) {
+      return NextResponse.json({ error: "Message not found" }, { status: 404 });
+    }
+
+    if (msg.sender_id !== user.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const { error: delError } = await supabase
       .from("internal_messages")
       .delete()
-      .eq("id", id)
-      .eq("sender_id", user.id);
+      .eq("id", id);
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+    if (delError) {
+      return NextResponse.json({ error: delError.message }, { status: 400 });
     }
 
     return NextResponse.json({ ok: true });

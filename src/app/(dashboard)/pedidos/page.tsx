@@ -8,7 +8,7 @@ import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { PedidoDetailSheet } from "@/components/pedidos/pedido-detail-sheet";
 import { DealForm } from "@/components/pipelines/deal-form";
 import { generatePedidoPDF } from "@/components/pedidos/pedido-pdf";
-import { Eye, Edit, Printer, Loader2, Search, X } from "lucide-react";
+import { Eye, Edit, Printer, Loader2, Search, X, ChevronDown, ChevronUp } from "lucide-react";
 
 function formatDate(dateStr: string | undefined | null): string {
   if (!dateStr) return "-";
@@ -20,6 +20,18 @@ function formatCurrency(value: number | undefined | null): string {
   if (value == null) return "-";
   return "R$ " + Number(value).toFixed(2).replace(".", ",");
 }
+
+const statusLabels: Record<string, string> = {
+  open: "Em Andamento",
+  won: "Ganho",
+  lost: "Perdido",
+};
+
+const statusColors: Record<string, string> = {
+  open: "text-amber-600 bg-amber-50",
+  won: "text-emerald-600 bg-emerald-50",
+  lost: "text-red-600 bg-red-50",
+};
 
 export default function PedidosPage() {
   const supabase = createClient();
@@ -43,6 +55,7 @@ export default function PedidosPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [editDeal, setEditDeal] = useState<Deal | null>(null);
   const [pipelineId, setPipelineId] = useState("");
+  const [showEmployees, setShowEmployees] = useState(true);
 
   const loadData = useCallback(async () => {
     if (!accountId) return;
@@ -53,7 +66,6 @@ export default function PedidosPage() {
         .from("deals")
         .select("*, contact:contacts(*), assignee:profiles(*)")
         .eq("account_id", accountId)
-        .eq("status", "won")
         .order("created_at", { ascending: false }),
       supabase.from("profiles").select("user_id, full_name, avatar_url").eq("account_id", accountId),
       supabase.from("pipelines").select("id, name").eq("account_id", accountId),
@@ -98,6 +110,24 @@ export default function PedidosPage() {
     }
     return true;
   });
+
+  const totalClients = new Set(filteredDeals.map((d) => d.contact?.id)).size;
+  const totalDeals = filteredDeals.length;
+  const totalValue = filteredDeals.reduce((acc, d) => acc + (d.value ?? 0), 0);
+  const wonDeals = filteredDeals.filter((d) => d.status === "won");
+  const wonValue = wonDeals.reduce((acc, d) => acc + (d.value ?? 0), 0);
+
+  const employeeTotals = profiles.map((p) => {
+    const empDeals = filteredDeals.filter((d) => d.assignee?.user_id === p.user_id);
+    const empWonDeals = empDeals.filter((d) => d.status === "won");
+    return {
+      ...p,
+      total: empDeals.length,
+      totalValue: empDeals.reduce((acc, d) => acc + (d.value ?? 0), 0),
+      wonCount: empWonDeals.length,
+      wonValue: empWonDeals.reduce((acc, d) => acc + (d.value ?? 0), 0),
+    };
+  }).filter((e) => e.total > 0).sort((a, b) => b.totalValue - a.totalValue);
 
   const handleView = useCallback((deal: Deal) => {
     setSelectedDeal(deal);
@@ -145,8 +175,101 @@ export default function PedidosPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-lg font-semibold text-foreground">Meus Pedidos</h1>
-        <p className="text-sm text-muted-foreground">Pedidos concluídos (status: Ganho)</p>
+        <h1 className="text-lg font-semibold text-foreground">Pedidos</h1>
+        <p className="text-sm text-muted-foreground">Todos os pedidos</p>
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
+        <div className="rounded-lg border border-border bg-card p-4">
+          <p className="text-xs text-muted-foreground uppercase tracking-wider">Total de Clientes</p>
+          <p className="text-2xl font-bold text-foreground mt-1">{totalClients}</p>
+        </div>
+        <div className="rounded-lg border border-border bg-card p-4">
+          <p className="text-xs text-muted-foreground uppercase tracking-wider">Total de Pedidos</p>
+          <p className="text-2xl font-bold text-foreground mt-1">{totalDeals}</p>
+        </div>
+        <div className="rounded-lg border border-border bg-card p-4">
+          <p className="text-xs text-muted-foreground uppercase tracking-wider">Em Andamento</p>
+          <p className="text-2xl font-bold text-amber-600 mt-1">{filteredDeals.filter((d) => d.status === "open").length}</p>
+        </div>
+        <div className="rounded-lg border border-border bg-card p-4">
+          <p className="text-xs text-muted-foreground uppercase tracking-wider">Ganhos</p>
+          <p className="text-2xl font-bold text-emerald-600 mt-1">{filteredDeals.filter((d) => d.status === "won").length}</p>
+        </div>
+        <div className="rounded-lg border border-border bg-card p-4">
+          <p className="text-xs text-muted-foreground uppercase tracking-wider">Perdidos</p>
+          <p className="text-2xl font-bold text-red-600 mt-1">{filteredDeals.filter((d) => d.status === "lost").length}</p>
+        </div>
+        <div className="rounded-lg border border-border bg-card p-4">
+          <p className="text-xs text-muted-foreground uppercase tracking-wider">Valor Total</p>
+          <p className="text-2xl font-bold text-primary mt-1">{formatCurrency(totalValue)}</p>
+        </div>
+        <div className="rounded-lg border border-border bg-card p-4">
+          <p className="text-xs text-muted-foreground uppercase tracking-wider">Comissão (3%)</p>
+          <p className="text-2xl font-bold text-emerald-600 mt-1">{formatCurrency(wonValue * 0.03)}</p>
+        </div>
+      </div>
+
+      {/* Employee totals */}
+      <div className="rounded-lg border border-border bg-card">
+        <button
+          onClick={() => setShowEmployees(!showEmployees)}
+          className="flex w-full items-center justify-between p-3 text-left"
+        >
+          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Resumo por Funcionário
+          </span>
+          {showEmployees ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+        </button>
+        {showEmployees && (
+          <div className="overflow-x-auto border-t border-border">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-border bg-muted/50">
+                  <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Funcionário</th>
+                  <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Pedidos</th>
+                  <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Ganhos</th>
+                  <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Valor Total</th>
+                  <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Valor Ganho</th>
+                  <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Comissão (3%)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {employeeTotals.map((emp) => (
+                  <tr key={emp.user_id} className="hover:bg-muted/30">
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <Avatar className="size-6">
+                          {emp.avatar_url ? <AvatarImage src={emp.avatar_url} /> : null}
+                          <AvatarFallback className="bg-primary/10 text-primary text-[9px]">
+                            {emp.full_name?.charAt(0)?.toUpperCase() ?? "?"}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className="text-sm font-medium text-foreground">{emp.full_name}</span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-sm text-foreground">{emp.total}</td>
+                    <td className="px-3 py-2 text-sm text-emerald-600 font-medium">{emp.wonCount}</td>
+                    <td className="px-3 py-2 text-sm text-foreground">{formatCurrency(emp.totalValue)}</td>
+                    <td className="px-3 py-2 text-sm text-primary font-medium">{formatCurrency(emp.wonValue)}</td>
+                    <td className="px-3 py-2 text-sm text-emerald-600 font-medium">{formatCurrency(emp.wonValue * 0.03)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="border-t border-border bg-muted/30">
+                <tr>
+                  <td className="px-3 py-2 text-sm font-semibold text-foreground">Total</td>
+                  <td className="px-3 py-2 text-sm font-semibold text-foreground">{totalDeals}</td>
+                  <td className="px-3 py-2 text-sm font-semibold text-emerald-600">{filteredDeals.filter((d) => d.status === "won").length}</td>
+                  <td className="px-3 py-2 text-sm font-semibold text-foreground">{formatCurrency(totalValue)}</td>
+                  <td className="px-3 py-2 text-sm font-semibold text-primary">{formatCurrency(wonValue)}</td>
+                  <td className="px-3 py-2 text-sm font-semibold text-emerald-600">{formatCurrency(wonValue * 0.03)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Search bar */}
@@ -219,6 +342,7 @@ export default function PedidosPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-border bg-muted/50">
+                <th className="whitespace-nowrap px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Status</th>
                 <th className="whitespace-nowrap px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Cliente</th>
                 <th className="whitespace-nowrap px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Responsável</th>
                 <th className="whitespace-nowrap px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Origem</th>
@@ -233,6 +357,11 @@ export default function PedidosPage() {
             <tbody className="divide-y divide-border">
               {filteredDeals.map((deal) => (
                 <tr key={deal.id} className="group transition-colors hover:bg-muted/30">
+                  <td className="px-3 py-2.5">
+                    <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase leading-tight ${statusColors[deal.status ?? "open"]}`}>
+                      {statusLabels[deal.status ?? "open"]}
+                    </span>
+                  </td>
                   <td className="px-3 py-2.5">
                     <div className="flex items-center gap-2">
                       <Avatar className="size-7 shrink-0">

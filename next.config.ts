@@ -61,6 +61,7 @@ const SECURITY_HEADERS = [
 ] as const;
 
 const nextConfig: NextConfig = {
+  allowedDevOrigins: ["dev.coexsistemas.techvoz.com.br"],
   /**
    * Cache-Control policy.
    *
