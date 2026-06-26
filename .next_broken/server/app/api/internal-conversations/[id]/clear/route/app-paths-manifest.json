@@ -1,0 +1,3 @@
+{
+  "/api/internal-conversations/[id]/clear/route": "app/api/internal-conversations/[id]/clear/route.js"
+}

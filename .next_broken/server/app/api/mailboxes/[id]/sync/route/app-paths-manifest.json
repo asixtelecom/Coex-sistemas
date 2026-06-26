@@ -1,0 +1,3 @@
+{
+  "/api/mailboxes/[id]/sync/route": "app/api/mailboxes/[id]/sync/route.js"
+}

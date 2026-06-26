@@ -1,0 +1,3 @@
+{
+  "/api/linkedin/webhook/route": "app/api/linkedin/webhook/route.js"
+}

@@ -1,0 +1,3 @@
+{
+  "/api/webchat/send/route": "app/api/webchat/send/route.js"
+}

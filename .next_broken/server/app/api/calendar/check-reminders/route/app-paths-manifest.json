@@ -1,0 +1,3 @@
+{
+  "/api/calendar/check-reminders/route": "app/api/calendar/check-reminders/route.js"
+}

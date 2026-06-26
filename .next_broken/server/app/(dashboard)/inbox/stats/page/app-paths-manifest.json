@@ -1,0 +1,3 @@
+{
+  "/(dashboard)/inbox/stats/page": "app/(dashboard)/inbox/stats/page.js"
+}

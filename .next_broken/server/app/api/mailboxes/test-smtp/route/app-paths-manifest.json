@@ -1,0 +1,3 @@
+{
+  "/api/mailboxes/test-smtp/route": "app/api/mailboxes/test-smtp/route.js"
+}

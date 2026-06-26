@@ -1,0 +1,3 @@
+module.exports=[537006,a=>{"use strict";var b=a.i(187924);a.s(["default",0,function({error:a,reset:c}){return(0,b.jsx)("html",{children:(0,b.jsx)("body",{children:(0,b.jsxs)("div",{className:"flex h-screen flex-col items-center justify-center gap-4",children:[(0,b.jsx)("h2",{className:"text-2xl font-bold",children:"Algo deu errado!"}),(0,b.jsx)("p",{className:"text-muted-foreground",children:"Ocorreu um erro inesperado. Tente novamente."}),(0,b.jsx)("button",{onClick:()=>c(),className:"rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90",children:"Tentar novamente"})]})})})}])}];
+
+//# sourceMappingURL=src_app_global-error_tsx_0ib21jc._.js.map

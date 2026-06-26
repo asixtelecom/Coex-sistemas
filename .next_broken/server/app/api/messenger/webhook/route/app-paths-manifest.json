@@ -1,0 +1,3 @@
+{
+  "/api/messenger/webhook/route": "app/api/messenger/webhook/route.js"
+}

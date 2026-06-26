@@ -1,0 +1,3 @@
+{
+  "/api/calendar/pending-notifications/route": "app/api/calendar/pending-notifications/route.js"
+}

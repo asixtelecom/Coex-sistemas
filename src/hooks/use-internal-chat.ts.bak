@@ -1,0 +1,474 @@
+"use client";
+
+import { useEffect, useRef, useState, useCallback } from "react";
+import { createClient } from "@/lib/supabase/client";
+import type {
+  InternalConversation,
+  InternalMessage,
+  UserPresence,
+  Profile,
+} from "@/types";
+
+export interface EmployeeWithPresence {
+  user_id: string;
+  full_name: string;
+  email: string;
+  avatar_url: string | null;
+  role: string;
+  status: "online" | "offline" | "away";
+  last_seen_at: string;
+}
+
+export interface ChatConversation extends InternalConversation {
+  other_user?: EmployeeWithPresence;
+  last_message?: InternalMessage;
+  unread_count: number;
+}
+
+export function useInternalChat(accountId: string | null, currentUserId: string | null) {
+  const [conversations, setConversations] = useState<ChatConversation[]>([]);
+  const [employees, setEmployees] = useState<EmployeeWithPresence[]>([]);
+  const [activeConversation, setActiveConversation] = useState<ChatConversation | null>(null);
+  const [messages, setMessages] = useState<InternalMessage[]>([]);
+  const [loading, setLoading] = useState(true);
+  const presenceIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const activeConvIdRef = useRef<string | null>(null);
+
+  // Keep ref in sync
+  useEffect(() => { loadEmployees(); }, [loadEmployees]);  useEffect(() => {    if (!currentUserId) {      setLoading(false);      return;    }    if (employees.length > 0) {      loadConversations().then(() => setLoading(false));    } else {      const timer = setTimeout(() => setLoading(false), 2000);      return () => clearTimeout(timer);    }  }, [employees, currentUserId, loadConversations]);
+    activeConvIdRef.current = activeConversation?.id ?? null;
+  }, [activeConversation]);
+
+  // Load employees with presence
+  const loadEmployees = useCallback(async () => {
+    if (!accountId) return;
+    const supabase = createClient();
+    const { data: members } = await supabase
+      .from("profiles")
+      .select("user_id, full_name, email, avatar_url, role, account_role")
+      .eq("account_id", accountId)
+      .in("account_role", ["admin", "agent", "owner"])
+      .returns<(Profile & { account_role: string })[]>();
+
+    if (!members) return;
+
+    const { data: presence } = await supabase
+      .from("user_presence")
+      .select("*")
+      .in("user_id", members.map((m) => m.user_id))
+      .returns<UserPresence[]>();
+
+    const presenceMap = new Map(
+      (presence ?? []).map((p) => [p.user_id, p])
+    );
+
+    const enriched: EmployeeWithPresence[] = members.map((m) => {
+      const p = presenceMap.get(m.user_id);
+      return {
+        user_id: m.user_id,
+        full_name: m.full_name,
+        email: m.email,
+        avatar_url: m.avatar_url ?? null,
+        role: m.account_role,
+        status: p?.status ?? ("offline" as const),
+        last_seen_at: p?.last_seen_at ?? "",
+      };
+    });
+
+    enriched.sort((a, b) => {
+      const order = { online: 0, away: 1, offline: 2 };
+      return order[a.status] - order[b.status];
+    });
+    setEmployees(enriched);
+  }, [accountId]);
+
+  // Update current user presence
+  const updatePresence = useCallback(async (status: "online" | "away" | "offline") => {
+    if (!currentUserId) return;
+    const supabase = createClient();
+    await supabase.from("user_presence").upsert(
+      { user_id: currentUserId, last_seen_at: new Date().toISOString(), status },
+      { onConflict: "user_id" }
+    );
+  }, [currentUserId]);
+
+  // Load conversations for current user
+  const loadConversations = useCallback(async () => {
+    if (!currentUserId) return;
+    const supabase = createClient();
+
+    // Get all conversation IDs the current user participates in
+    const { data: myParticipants } = await supabase
+      .from("internal_conversation_participants")
+      .select("conversation_id, last_read_at")
+      .eq("user_id", currentUserId);
+
+    if (!myParticipants || myParticipants.length === 0) return;
+
+    const convIds = myParticipants.map((p) => p.conversation_id);
+    const lastReadMap = new Map(myParticipants.map((p) => [p.conversation_id, p.last_read_at]));
+
+    // Get all conversations
+    const { data: convs } = await supabase
+      .from("internal_conversations")
+      .select("*")
+      .in("id", convIds)
+      .returns<InternalConversation[]>();
+
+    if (!convs) return;
+
+    // Get other participants for all conversations
+    const { data: allParticipants } = await supabase
+      .from("internal_conversation_participants")
+      .select("conversation_id, user_id")
+      .in("conversation_id", convIds)
+      .neq("user_id", currentUserId);
+
+    const otherUserMap = new Map<string, string>();
+    if (allParticipants) {
+      for (const p of allParticipants) {
+        if (!otherUserMap.has(p.conversation_id)) {
+          otherUserMap.set(p.conversation_id, p.user_id);
+        }
+      }
+    }
+
+    const convList: ChatConversation[] = [];
+    for (const conv of convs) {
+      const otherUserId = otherUserMap.get(conv.id);
+      const otherUser = employees.find((e) => e.user_id === otherUserId);
+      const lastReadAt = lastReadMap.get(conv.id) ?? conv.created_at;
+
+      // Get last message
+      const { data: lastMsg } = await supabase
+        .from("internal_messages")
+        .select("*")
+        .eq("conversation_id", conv.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .returns<InternalMessage[]>();
+
+      // Count unread
+      const { count } = await supabase
+        .from("internal_messages")
+        .select("*", { count: "exact", head: true })
+        .eq("conversation_id", conv.id)
+        .gt("created_at", lastReadAt)
+        .neq("sender_id", currentUserId);
+
+      convList.push({
+        ...conv,
+        other_user: otherUser,
+        last_message: lastMsg?.[0],
+        unread_count: count ?? 0,
+      });
+    }
+
+    convList.sort((a, b) => {
+      const aTime = a.last_message?.created_at ?? a.created_at;
+      const bTime = b.last_message?.created_at ?? b.created_at;
+      return new Date(bTime).getTime() - new Date(aTime).getTime();
+    });
+
+    setConversations(convList);
+  }, [currentUserId, employees]);
+
+  // Re-link employees when they change (presence updates etc.)
+  useEffect(() => { loadEmployees(); }, [loadEmployees]);  useEffect(() => {    if (!currentUserId) {      setLoading(false);      return;    }    if (employees.length > 0) {      loadConversations().then(() => setLoading(false));    } else {      const timer = setTimeout(() => setLoading(false), 2000);      return () => clearTimeout(timer);    }  }, [employees, currentUserId, loadConversations]);
+    if (conversations.length > 0 && employees.length > 0) {
+      setConversations((prev) =>
+        prev.map((c) => {
+          const otherUserId = c.other_user?.user_id;
+          if (!otherUserId) return c;
+          const otherUser = employees.find((e) => e.user_id === otherUserId);
+          return { ...c, other_user: otherUser ?? c.other_user };
+        })
+      );
+    }
+  }, [employees]);
+
+  // Load messages for a conversation
+  const loadMessages = useCallback(async (conversationId: string) => {
+    const supabase = createClient();
+    const { data } = await supabase
+      .from("internal_messages")
+      .select("*, sender:profiles!sender_id(*)")
+      .eq("conversation_id", conversationId)
+      .order("created_at", { ascending: true })
+      .returns<InternalMessage[]>();
+    setMessages(data ?? []);
+  }, []);
+
+  // Send a text message
+  const sendMessage = useCallback(async (
+    conversationId: string,
+    content: string,
+    media?: { url: string; type: string; name: string; size: number }
+  ) => {
+    if (!currentUserId) return;
+    if (!content.trim() && !media) return;
+    const supabase = createClient();
+
+    const payload: Record<string, unknown> = {
+      conversation_id: conversationId,
+      sender_id: currentUserId,
+      content: content.trim() || (media ? media.name : ""),
+    };
+    if (media) {
+      payload.media_url = media.url;
+      payload.media_type = media.type;
+      payload.media_name = media.name;
+      payload.media_size = media.size;
+    }
+
+    const { data, error } = await supabase
+      .from("internal_messages")
+      .insert(payload)
+      .select("*, sender:profiles!sender_id(*)")
+      .single();
+
+    if (error || !data) return;
+    setMessages((prev) => [...prev, data as InternalMessage]);
+    await supabase
+      .from("internal_conversations")
+      .update({ updated_at: new Date().toISOString() })
+      .eq("id", conversationId);
+    await supabase
+      .from("internal_conversation_participants")
+      .update({ last_read_at: new Date().toISOString() })
+      .eq("conversation_id", conversationId)
+      .eq("user_id", currentUserId);
+  }, [currentUserId]);
+
+  // Upload file to storage
+  const uploadFile = useCallback(async (file: File): Promise<{ url: string; type: string; name: string; size: number } | null> => {
+    if (!currentUserId) return null;
+    const supabase = createClient();
+    const ext = file.name.split(".").pop() ?? "";
+    const fileName = `${currentUserId}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+    const bucket = "internal-chat-files";
+
+    const { error } = await supabase.storage
+      .from(bucket)
+      .upload(fileName, file, {
+        cacheControl: "3600",
+        upsert: false,
+      });
+
+    if (error) {
+      console.error("Upload failed:", error);
+      return null;
+    }
+
+    const { data: urlData } = supabase.storage
+      .from(bucket)
+      .getPublicUrl(fileName);
+
+    return {
+      url: urlData.publicUrl,
+      type: file.type,
+      name: file.name,
+      size: file.size,
+    };
+  }, [currentUserId]);
+
+  // Create or get existing conversation
+  const getOrCreateConversation = useCallback(async (otherUserId: string): Promise<string | null> => {
+    if (!currentUserId || !accountId) return null;
+    const supabase = createClient();
+
+    // Check if conversation already exists
+    const { data: existing } = await supabase
+      .rpc("find_internal_conversation", {
+        p_user1: currentUserId,
+        p_user2: otherUserId,
+      });
+
+    if (existing) {
+      await loadMessages(existing);
+      const existingConv = conversations.find((c) => c.id === existing);
+      if (existingConv) {
+        setActiveConversation(existingConv);
+      } else {
+        // Build minimal object from DB data
+        const { data: convData } = await supabase
+          .from("internal_conversations")
+          .select("*")
+          .eq("id", existing)
+          .single();
+        if (convData) {
+          const otherEmp = employees.find((e) => e.user_id === otherUserId);
+          const minimalConv: ChatConversation = {
+            ...convData,
+            other_user: otherEmp,
+            unread_count: 0,
+          };
+          setConversations((prev) => {
+            if (prev.some((c) => c.id === existing)) return prev;
+            return [minimalConv, ...prev];
+          });
+          setActiveConversation(minimalConv);
+        }
+      }
+      return existing;
+    }
+
+    // Create new conversation
+    const { data: conv, error: convError } = await supabase
+      .from("internal_conversations")
+      .insert({ account_id: accountId })
+      .select()
+      .single();
+
+    if (convError || !conv) return null;
+
+    await supabase.from("internal_conversation_participants").insert([
+      { conversation_id: conv.id, user_id: currentUserId },
+      { conversation_id: conv.id, user_id: otherUserId },
+    ]);
+
+    // Build a minimal conversation object from what we know
+    const otherEmp = employees.find((e) => e.user_id === otherUserId);
+    const newConv: ChatConversation = {
+      ...conv,
+      other_user: otherEmp,
+      unread_count: 0,
+    };
+
+    setConversations((prev) => [newConv, ...prev]);
+    setMessages([]);
+    setActiveConversation(newConv);
+    return conv.id;
+  }, [currentUserId, accountId, conversations, employees, loadMessages]);
+
+  // Mark conversation as read
+  const markAsRead = useCallback(async (conversationId: string) => {
+    if (!currentUserId) return;
+    const supabase = createClient();
+    await supabase
+      .from("internal_conversation_participants")
+      .update({ last_read_at: new Date().toISOString() })
+      .eq("conversation_id", conversationId)
+      .eq("user_id", currentUserId);
+
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === conversationId ? { ...c, unread_count: 0 } : c
+      )
+    );
+  }, [currentUserId]);
+
+  // Presence heartbeat
+  useEffect(() => { loadEmployees(); }, [loadEmployees]);  useEffect(() => {    if (!currentUserId) {      setLoading(false);      return;    }    if (employees.length > 0) {      loadConversations().then(() => setLoading(false));    } else {      const timer = setTimeout(() => setLoading(false), 2000);      return () => clearTimeout(timer);    }  }, [employees, currentUserId, loadConversations]);
+    if (!currentUserId) return;
+    updatePresence("online");
+    presenceIntervalRef.current = setInterval(() => {
+      updatePresence("online");
+    }, 30000);
+
+    const onVisibility = () => {
+      updatePresence(document.visibilityState === "visible" ? "online" : "away");
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
+    const onBeforeUnload = () => {
+      navigator.sendBeacon
+        ? navigator.sendBeacon(`/api/presence/offline?userId=${currentUserId}`)
+        : updatePresence("offline");
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+
+    return () => {
+      if (presenceIntervalRef.current) clearInterval(presenceIntervalRef.current);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+    };
+  }, [currentUserId, updatePresence]);
+
+  // Initial load
+  useEffect(() => { loadEmployees(); }, [loadEmployees]);  useEffect(() => {    if (!currentUserId) {      setLoading(false);      return;    }    if (employees.length > 0) {      loadConversations().then(() => setLoading(false));    } else {      const timer = setTimeout(() => setLoading(false), 2000);      return () => clearTimeout(timer);    }  }, [employees, currentUserId, loadConversations]); loadEmployees(); }, [loadEmployees]);
+  useEffect(() => { loadEmployees(); }, [loadEmployees]);  useEffect(() => {    if (!currentUserId) {      setLoading(false);      return;    }    if (employees.length > 0) {      loadConversations().then(() => setLoading(false));    } else {      const timer = setTimeout(() => setLoading(false), 2000);      return () => clearTimeout(timer);    }  }, [employees, currentUserId, loadConversations]);
+    if (employees.length > 0 && currentUserId) {
+      loadConversations().then(() => setLoading(false));
+    }
+  }, [employees, currentUserId, loadConversations]);
+
+  // Realtime
+  useEffect(() => { loadEmployees(); }, [loadEmployees]);  useEffect(() => {    if (!currentUserId) {      setLoading(false);      return;    }    if (employees.length > 0) {      loadConversations().then(() => setLoading(false));    } else {      const timer = setTimeout(() => setLoading(false), 2000);      return () => clearTimeout(timer);    }  }, [employees, currentUserId, loadConversations]);
+    if (!currentUserId) return;
+    const supabase = createClient();
+
+    const channel = supabase
+      .channel("internal-chat-realtime")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "internal_messages" },
+        async (payload) => {
+          const msg = payload.new as InternalMessage;
+          if (activeConvIdRef.current === msg.conversation_id) {
+            const { data: sender } = await supabase
+              .from("profiles")
+              .select("*")
+              .eq("user_id", msg.sender_id)
+              .single();
+            setMessages((prev) => [...prev, { ...msg, sender: sender as Profile }]);
+            markAsRead(msg.conversation_id);
+          }
+          setConversations((prev) =>
+            prev.map((c) => {
+              if (c.id === msg.conversation_id) {
+                return {
+                  ...c,
+                  last_message: msg,
+                  updated_at: msg.created_at,
+                  unread_count: activeConvIdRef.current === msg.conversation_id ? 0 : c.unread_count + 1,
+                };
+              }
+              return c;
+            })
+          );
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "user_presence" },
+        (payload) => {
+          const p = payload.new as UserPresence;
+          setEmployees((prev) =>
+            prev.map((e) =>
+              e.user_id === p.user_id
+                ? { ...e, status: p.status, last_seen_at: p.last_seen_at }
+                : e
+            )
+          );
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [currentUserId, markAsRead]);
+
+  const handleSetActiveConversation = useCallback((conv: ChatConversation | null) => {
+    setActiveConversation(conv);
+    if (conv) {
+      loadMessages(conv.id);
+      markAsRead(conv.id);
+    } else {
+      setMessages([]);
+    }
+  }, [loadMessages, markAsRead]);
+
+  return {
+    conversations,
+    employees,
+    activeConversation,
+    messages,
+    loading,
+    setActiveConversation: handleSetActiveConversation,
+    sendMessage,
+    uploadFile,
+    getOrCreateConversation,
+    loadMessages,
+    markAsRead,
+  };
+}

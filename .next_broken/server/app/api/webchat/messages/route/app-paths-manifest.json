@@ -1,0 +1,3 @@
+{
+  "/api/webchat/messages/route": "app/api/webchat/messages/route.js"
+}
