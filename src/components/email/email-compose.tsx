@@ -11,6 +11,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
+import { useAuth } from "@/hooks/use-auth"
 
 interface Template {
   id: number
@@ -56,6 +57,7 @@ export function EmailCompose({ mailboxId, onClose, onSend, initialTo, initialSub
   const [attachments, setAttachments] = useState<AttachedFile[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const supabase = createClient()
+  const { account } = useAuth()
 
   useEffect(() => {
     const fetch = async () => {
@@ -68,6 +70,51 @@ export function EmailCompose({ mailboxId, onClose, onSend, initialTo, initialSub
     }
     fetch()
   }, [])
+
+  // Append agent signature when replying/forwarding
+  useEffect(() => {
+    if (!initialTo || !initialMessage) return
+    const appendSignature = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      // Fetch signature (may fail if column doesn't exist yet)
+      let sig: string | null = null
+      let agentName: string | null = null
+      try {
+        const { data: profile, error } = await supabase
+          .from("profiles")
+          .select("full_name, email_signature")
+          .eq("user_id", user.id)
+          .maybeSingle()
+        if (!error && profile) {
+          sig = profile.email_signature
+          agentName = profile.full_name
+        }
+      } catch {
+        // column may not exist yet
+      }
+      if (!sig) return
+
+      // Fetch company phone separately (column may not exist yet)
+      let companyPhone = ""
+      try {
+        const { data: accountData } = await supabase
+          .from("accounts")
+          .select("phone")
+          .eq("id", account?.id ?? "")
+          .maybeSingle()
+        if (accountData?.phone) {
+          companyPhone = `Tel: ${accountData.phone}`
+        }
+      } catch {
+        // column may not exist yet
+      }
+
+      setMessage((prev) => prev + `\n\n${sig.replace(/\{nome\}/gi, agentName || "").replace(/\{telefone\}/gi, companyPhone)}`)
+    }
+    appendSignature()
+  }, [initialTo, initialMessage])
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])

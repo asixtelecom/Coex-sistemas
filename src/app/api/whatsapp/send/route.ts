@@ -133,10 +133,10 @@ export async function POST(request: Request) {
       )
     }
 
-    // Fetch conversation and contact
+    // Fetch conversation and contact (include channel for multi-number)
     const { data: conversation, error: convError } = await supabase
       .from('conversations')
-      .select('*, contact:contacts(*)')
+      .select('*, contact:contacts(*), channel:channels(*)')
       .eq('id', conversation_id)
       .eq('account_id', accountId)
       .single()
@@ -165,21 +165,67 @@ export async function POST(request: Request) {
       )
     }
 
-    // Fetch and decrypt WhatsApp config
-    const { data: config, error: configError } = await supabase
-      .from('whatsapp_config')
-      .select('*')
-      .eq('account_id', accountId)
-      .single()
+    // Resolve WhatsApp config: from conversation channel if available,
+    // otherwise fall back to account-level config (backward compat).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let config: any = null
+    let accessToken = ''
 
-    if (configError || !config) {
-      return NextResponse.json(
-        { error: 'WhatsApp not configured. Please set up your WhatsApp integration first.' },
-        { status: 400 }
-      )
+    const channel = conversation.channel
+    const whatsappConfigId =
+      channel?.config &&
+      typeof channel.config === 'object' &&
+      !Array.isArray(channel.config)
+        ? (channel.config as Record<string, unknown>).whatsapp_config_id as string | undefined
+        : undefined
+
+    if (whatsappConfigId) {
+      const { data: channelConfig, error: chCfgErr } = await supabase
+        .from('whatsapp_config')
+        .select('*')
+        .eq('id', whatsappConfigId)
+        .eq('account_id', accountId)
+        .maybeSingle()
+
+      if (chCfgErr || !channelConfig) {
+        return NextResponse.json(
+          { error: 'WhatsApp config for this channel not found.' },
+          { status: 400 }
+        )
+      }
+      config = channelConfig
+      try {
+        accessToken = decrypt(channelConfig.access_token)
+      } catch {
+        return NextResponse.json(
+          { error: 'Failed to decrypt access token for this channel.' },
+          { status: 500 }
+        )
+      }
+    } else {
+      // Fallback: single-number setup (backward compat)
+      const { data: fallbackConfig, error: configError } = await supabase
+        .from('whatsapp_config')
+        .select('*')
+        .eq('account_id', accountId)
+        .maybeSingle()
+
+      if (configError || !fallbackConfig) {
+        return NextResponse.json(
+          { error: 'WhatsApp not configured. Please set up your WhatsApp integration first.' },
+          { status: 400 }
+        )
+      }
+      config = fallbackConfig
+      try {
+        accessToken = decrypt(fallbackConfig.access_token)
+      } catch {
+        return NextResponse.json(
+          { error: 'Failed to decrypt access token.' },
+          { status: 500 }
+        )
+      }
     }
-
-    const accessToken = decrypt(config.access_token)
 
     // Self-heal legacy CBC-encrypted tokens. Fire-and-forget: we
     // return from the send without waiting, so a failed upgrade just

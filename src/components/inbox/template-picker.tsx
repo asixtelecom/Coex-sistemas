@@ -23,6 +23,12 @@ import {
 } from "lucide-react";
 import { extractVariableIndices } from "@/lib/whatsapp/template-validators";
 
+const categoryLabels: Record<string, string> = {
+  Marketing: 'Marketing',
+  Utility: 'Utilitário',
+  Authentication: 'Autenticação',
+};
+
 export interface TemplateSendValues {
   body: string[];
   headerText?: string;
@@ -225,7 +231,7 @@ export function TemplatePicker({
                           {t.name}
                         </p>
                         <Badge className="border border-primary/30 bg-primary/20 text-[10px] text-primary">
-                          {t.category}
+                          {categoryLabels[t.category] || t.category}
                         </Badge>
                         {t.language && (
                           <span className="text-[10px] uppercase text-muted-foreground">

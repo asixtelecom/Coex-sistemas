@@ -3,11 +3,13 @@
 import { Suspense, useState, useCallback, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import type { Conversation, Message, Contact, ConversationStatus } from "@/types";
+import type { Conversation, Message, Contact, ConversationStatus, Pipeline, PipelineStage, Deal } from "@/types";
 import { useRealtime } from "@/hooks/use-realtime";
+import { useAuth } from "@/hooks/use-auth";
 import { ConversationList } from "@/components/inbox/conversation-list";
 import { MessageThread } from "@/components/inbox/message-thread";
 import { ContactSidebar } from "@/components/inbox/contact-sidebar";
+import { DealForm } from "@/components/pipelines/deal-form";
 import { toast } from "sonner";
 import { WifiOff } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -19,6 +21,7 @@ const CONTACT_PANEL_STORAGE_KEY = "wacrm:inbox:contact-panel-open";
 function InboxPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { user } = useAuth();
   /**
    * `?c=<id>` deep-link support. Used when landing here from the
    * dashboard's recent-conversations list so the right thread opens
@@ -42,6 +45,38 @@ function InboxPageInner() {
    * once on conversationId-change as usual.
    */
   const [resyncToken, setResyncToken] = useState(0);
+
+  const [dealFormOpen, setDealFormOpen] = useState(false);
+  const [pipelines, setPipelines] = useState<Pipeline[]>([]);
+  const [stages, setStages] = useState<PipelineStage[]>([]);
+
+  // Load pipelines and stages for DealForm
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    const supabase = createClient();
+    (async () => {
+      const { data: pipelineData } = await supabase
+        .from("pipelines")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at");
+      if (cancelled || !pipelineData?.length) return;
+      setPipelines(pipelineData as Pipeline[]);
+      const { data: stageData } = await supabase
+        .from("pipeline_stages")
+        .select("*")
+        .eq("pipeline_id", pipelineData[0].id)
+        .order("position");
+      if (cancelled) return;
+      setStages((stageData as PipelineStage[]) ?? []);
+    })();
+    return () => { cancelled = true; };
+  }, [user]);
+
+  const handleDealFormSaved = useCallback(() => {
+    setDealFormOpen(false);
+  }, []);
 
   /**
    * Whether the desktop contact sidebar (tags / deals / notes) is shown.
@@ -199,12 +234,66 @@ function InboxPageInner() {
     checkConnection();
   }, []);
 
+  // ── Notification helpers ────────────────────────────────────────
+  const audioCtxRef = useRef<AudioContext | null>(null)
+
+  const playNotificationSound = useCallback(() => {
+    try {
+      let ctx = audioCtxRef.current
+      if (!ctx) {
+        ctx = new AudioContext()
+        audioCtxRef.current = ctx
+      }
+      if (ctx.state === "suspended") {
+        ctx.resume()
+      }
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.frequency.value = 800
+      osc.type = "sine"
+      gain.gain.setValueAtTime(0.3, ctx.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4)
+      osc.start(ctx.currentTime)
+      osc.stop(ctx.currentTime + 0.4)
+    } catch { /* audio not supported */ }
+  }, [])
+
+  const showDesktopNotification = useCallback((title: string, body: string) => {
+    if (typeof window === "undefined" || !("Notification" in window)) return
+    if (Notification.permission === "granted") {
+      new Notification(title, { body, icon: "/icon.png" })
+    } else if (Notification.permission === "default") {
+      Notification.requestPermission()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission()
+    }
+  }, [])
+
   // Handle realtime message events
   const handleMessageEvent = useCallback(
     (event: { eventType: string; new: Message; old: Partial<Message> }) => {
       const newMsg = event.new;
 
       if (event.eventType === "INSERT") {
+        // Notify on new customer messages
+        if (newMsg.sender_type === "customer") {
+          playNotificationSound()
+          showDesktopNotification(
+            "Nova mensagem",
+            newMsg.content_text ?? "[Mídia]"
+          )
+          toast("Nova mensagem", {
+            description: newMsg.content_text ?? "[Mídia]",
+            duration: 4000,
+          })
+        }
+
         // Add to messages if it belongs to active conversation
         if (
           activeConversation &&
@@ -629,20 +718,33 @@ function InboxPageInner() {
             onBack={handleCloseConversation}
             resyncToken={resyncToken}
             onRefresh={handleManualRefresh}
-            contactPanelOpen={contactPanelOpen}
+            contactPanelOpen={contactPanelOpen && !dealFormOpen}
             onToggleContactPanel={handleToggleContactPanel}
+            onOpenDealForm={() => setDealFormOpen(true)}
           />
         </div>
 
-        {/* Right panel: Contact sidebar — desktop only, and only when the
-            agent hasn't collapsed it via the thread-header toggle (#258).
-            On mobile it's always hidden (the `lg:block` below), so the
-            toggle — which is itself desktop-only — never affects it. */}
-        {contactPanelOpen && (
+        {/* Right panel: Contact sidebar or DealForm */}
+        {dealFormOpen ? (
+          <div className="hidden lg:flex h-full">
+            <DealForm
+              open={true}
+              onOpenChange={setDealFormOpen}
+              pipelineId={pipelines[0]?.id ?? ""}
+              stages={stages}
+              defaultStageId={stages[0]?.id}
+              onSaved={handleDealFormSaved}
+              dismissible={false}
+              inline
+              initialContact={activeContact}
+              conversationId={activeConversation?.id}
+            />
+          </div>
+        ) : contactPanelOpen ? (
           <div className="hidden lg:block">
             <ContactSidebar contact={activeContact} />
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );

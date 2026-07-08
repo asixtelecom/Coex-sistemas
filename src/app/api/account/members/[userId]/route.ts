@@ -1,33 +1,15 @@
-// ============================================================
-// /api/account/members/[userId]
-//
-//   PATCH  — change a member's role.   Admin+.
-//   DELETE — remove a member.          Admin+.
-//
-// Both delegate to SECURITY DEFINER RPCs from migration 018:
-//   - set_member_role(p_user_id, p_new_role)
-//   - remove_account_member(p_user_id)
-//
-// The RPCs do the *real* authorisation work — caller must be
-// admin+, target must be in caller's account, target can't be the
-// owner, can't be self. The TS layer here only forwards the call
-// and maps Postgres SQLSTATEs back to HTTP statuses.
-// ============================================================
-
 import { NextResponse } from "next/server";
 import type { PostgrestError } from "@supabase/supabase-js";
 
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
-import { isAccountRole } from "@/lib/auth/roles";
+import { isAccountRole, FEATURE_PERMISSIONS, type FeaturePermissions } from "@/lib/auth/roles";
 import {
   checkRateLimit,
   rateLimitResponse,
   RATE_LIMITS,
 } from "@/lib/rate-limit";
+import { supabaseAdmin } from "@/lib/automations/admin-client";
 
-// Map known SQLSTATEs from the RPCs (see migration 018) onto HTTP
-// statuses. The `error.code` field is the SQLSTATE; the `message`
-// is the human-readable RAISE message we put in the migration.
 function rpcErrorToResponse(err: PostgrestError): NextResponse {
   if (err.code === "42501") {
     return NextResponse.json({ error: err.message }, { status: 403 });
@@ -57,11 +39,96 @@ export async function PATCH(
 
     const { userId } = await params;
 
-    const body = (await request.json().catch(() => null)) as
-      | { role?: unknown }
-      | null;
-    const role = body?.role;
+    const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+    if (!body) {
+      return NextResponse.json({ error: "Request body is required" }, { status: 400 });
+    }
 
+    // Handle avatar update (admin can set any member's avatar)
+    if (body.avatar !== undefined) {
+      const admin = supabaseAdmin();
+
+      if (body.avatar === null) {
+        const { error } = await admin
+          .from("profiles")
+          .update({ avatar_url: null })
+          .eq("user_id", userId);
+        if (error) {
+          console.error("[members route] avatar remove error:", error);
+          return NextResponse.json({ error: "Failed to remove avatar" }, { status: 500 });
+        }
+        return NextResponse.json({ ok: true, avatar_url: null });
+      }
+
+      if (typeof body.avatar === "string" && body.avatar.startsWith("data:image/")) {
+        const matches = body.avatar.match(/^data:image\/(\w+);base64,(.+)$/);
+        if (!matches) {
+          return NextResponse.json({ error: "Invalid image data" }, { status: 400 });
+        }
+
+        const ext = matches[1] === "jpeg" ? "jpg" : matches[1];
+        const base64Data = matches[2];
+        const buffer = Buffer.from(base64Data, "base64");
+
+        const path = `${userId}/avatar-${Date.now()}.${ext}`;
+
+        const { error: uploadError } = await admin.storage
+          .from("avatars")
+          .upload(path, buffer, {
+            cacheControl: "3600",
+            upsert: true,
+            contentType: `image/${ext === "jpg" ? "jpeg" : ext}`,
+          });
+
+        if (uploadError) {
+          console.error("[members route] avatar upload error:", uploadError);
+          return NextResponse.json({ error: "Failed to upload avatar" }, { status: 500 });
+        }
+
+        const {
+          data: { publicUrl },
+        } = admin.storage.from("avatars").getPublicUrl(path);
+
+        const { error: updateError } = await admin
+          .from("profiles")
+          .update({ avatar_url: publicUrl })
+          .eq("user_id", userId);
+        if (updateError) {
+          console.error("[members route] avatar profile update error:", updateError);
+          return NextResponse.json({ error: "Failed to update profile" }, { status: 500 });
+        }
+
+        return NextResponse.json({ ok: true, avatar_url: publicUrl });
+      }
+
+      return NextResponse.json({ error: "avatar must be a data:image URL or null" }, { status: 400 });
+    }
+
+    // Handle permissions update
+    if (body.permissions !== undefined) {
+      const perms = body.permissions as Record<string, boolean>;
+      for (const key of Object.keys(perms)) {
+        if (!(FEATURE_PERMISSIONS as readonly string[]).includes(key)) {
+          return NextResponse.json(
+            { error: `Unknown permission: ${key}` },
+            { status: 400 },
+          );
+        }
+      }
+      const { error } = await ctx.supabase.rpc("set_member_permissions", {
+        p_user_id: userId,
+        p_permissions: perms,
+      });
+
+      if (error) {
+        console.error("[members route] permissions update error:", error);
+        return rpcErrorToResponse(error);
+      }
+      return NextResponse.json({ ok: true });
+    }
+
+    // Handle role update
+    const role = body.role;
     if (!isAccountRole(role)) {
       return NextResponse.json(
         { error: "'role' must be one of owner, admin, agent, viewer" },
@@ -69,8 +136,6 @@ export async function PATCH(
       );
     }
 
-    // The RPC blocks promotion to / demotion from owner, but
-    // surface the friendlier 400 before crossing the wire too.
     if (role === "owner") {
       return NextResponse.json(
         {

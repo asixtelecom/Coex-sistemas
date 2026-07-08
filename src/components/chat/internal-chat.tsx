@@ -58,6 +58,16 @@ export function InternalChat() {
   const [uploading, setUploading] = useState(false);
   const [hoveredConvId, setHoveredConvId] = useState<string | null>(null);
   const [hoveredMsgId, setHoveredMsgId] = useState<string | null>(null);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [isDraggingState, setIsDraggingState] = useState(false);
+
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const isDragging = useRef(false);
+  const wasDragged = useRef(false);
+  const dragStart = useRef({ x: 0, y: 0 });
+  const offsetAtDragStart = useRef({ x: 0, y: 0 });
+  const pointerDownTarget = useRef<EventTarget | null>(null);
 
   useEffect(() => {
     if (!showEmojiPicker) return;
@@ -69,6 +79,83 @@ export function InternalChat() {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [showEmojiPicker]);
+
+  function applyTransform(x: number, y: number) {
+    btnRef.current?.style.setProperty('transform', 'translate(' + x + 'px,' + y + 'px)');
+    panelRef.current?.style.setProperty('transform', 'translate(' + x + 'px,' + y + 'px)');
+  }
+
+  useEffect(() => {
+    const handleMove = (e: PointerEvent) => {
+      if (!isDragging.current) return;
+      const dx = e.clientX - dragStart.current.x;
+      const dy = e.clientY - dragStart.current.y;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+        wasDragged.current = true;
+      }
+      var nx = offsetAtDragStart.current.x + dx;
+      var ny = offsetAtDragStart.current.y + dy;
+      applyTransform(nx, ny);
+    };
+    const handleUp = (e: PointerEvent) => {
+      if (!isDragging.current) return;
+      isDragging.current = false;
+      setIsDraggingState(false);
+      const nx = offsetAtDragStart.current.x + (e.clientX - dragStart.current.x);
+      const ny = offsetAtDragStart.current.y + (e.clientY - dragStart.current.y);
+      setDragOffset({ x: nx, y: ny });
+      applyTransform(nx, ny);
+      if (!wasDragged.current && pointerDownTarget.current === btnRef.current) {
+        setIsOpen(true);
+      }
+      wasDragged.current = false;
+      pointerDownTarget.current = null;
+    };
+    document.addEventListener("pointermove", handleMove);
+    document.addEventListener("pointerup", handleUp);
+    return () => {
+      document.removeEventListener("pointermove", handleMove);
+      document.removeEventListener("pointerup", handleUp);
+    };
+  }, []);
+
+  useEffect(() => {
+    applyTransform(dragOffset.x, dragOffset.y);
+  }, [dragOffset]);
+
+  // Attach pointerdown on the button via native listener
+  useEffect(() => {
+    const btn = btnRef.current;
+    if (!btn) return;
+    const onDown = (e: PointerEvent) => {
+      pointerDownTarget.current = btn;
+      isDragging.current = true;
+      wasDragged.current = false;
+      setIsDraggingState(true);
+      dragStart.current = { x: e.clientX, y: e.clientY };
+      offsetAtDragStart.current = { x: dragOffset.x, y: dragOffset.y };
+    };
+    btn.addEventListener('pointerdown', onDown);
+    return () => btn.removeEventListener('pointerdown', onDown);
+  });
+
+  // Attach pointerdown on the panel via native listener
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!panel) return;
+    const onDown = (e: PointerEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest("button") || target.closest("input") || target.closest('[role="button"]')) return;
+      pointerDownTarget.current = panel;
+      isDragging.current = true;
+      wasDragged.current = false;
+      setIsDraggingState(true);
+      dragStart.current = { x: e.clientX, y: e.clientY };
+      offsetAtDragStart.current = { x: dragOffset.x, y: dragOffset.y };
+    };
+    panel.addEventListener('pointerdown', onDown);
+    return () => panel.removeEventListener('pointerdown', onDown);
+  });
 
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
@@ -141,6 +228,20 @@ export function InternalChat() {
   useEffect(() => {
     if (!activeConversation && isRecording) stopRecording();
   }, [activeConversation, isRecording, stopRecording]);
+
+  useEffect(() => {
+    const existing = document.querySelector('script[src*="embed-dialer.js"]')
+    if (existing) return
+    const script = document.createElement("script")
+    script.src = "/widgets/embed-dialer.js?v=3.1"
+    script.setAttribute("data-login", "")
+    script.setAttribute("data-senha", "senha_do_agente")
+    script.async = true
+    document.body.appendChild(script)
+    return () => {
+      script.remove()
+    }
+  }, [])
 
   const formatDuration = (sec: number) => {
     const m = Math.floor(sec / 60);
@@ -252,8 +353,12 @@ export function InternalChat() {
   if (!isOpen) {
     return (
       <button
-        onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-all hover:scale-105 hover:shadow-xl active:scale-95"
+        ref={btnRef}
+        style={{ transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)` }}
+        className={cn(
+          "fixed bottom-6 right-6 z-50 flex h-14 w-14 cursor-grab items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg hover:scale-105 hover:shadow-xl active:scale-95",
+          !isDraggingState && "transition-all duration-200"
+        )}
         title="Chat Interno"
       >
         <MessageSquare className="h-6 w-6" />
@@ -268,8 +373,11 @@ export function InternalChat() {
 
   return (
     <div
+      ref={panelRef}
+      style={{ transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)` }}
       className={cn(
-        "fixed bottom-6 right-6 z-50 flex flex-col rounded-xl border border-border bg-card shadow-2xl transition-all duration-200",
+        "fixed bottom-6 right-6 z-50 flex flex-col rounded-xl border border-border bg-card shadow-2xl",
+        !isDraggingState && "transition-all duration-200",
         isExpanded ? "h-[650px] w-[500px]" : "h-[560px] w-[400px]"
       )}
     >

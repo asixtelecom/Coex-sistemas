@@ -24,6 +24,7 @@ import { DealsSettings } from '@/components/settings/deals-settings';
 import { MembersTab } from '@/components/settings/members-tab';
 import { PixConfig } from "@/components/settings/pix-config"
 import { ZapsignConfig } from "@/components/settings/zapsign-config"
+import { CubagemSettings } from "@/components/settings/cubagem-settings"
 import {
   AGENT_SECTIONS,
   resolveSection,
@@ -85,6 +86,7 @@ function SettingsPageInner() {
         fields: <FieldsAndTagsPanel />,
         deals: <DealsSettings />,
         members: <MembersTab />,
+        cubagem: <CubagemSettings />,
       }
     : {};
 
@@ -100,11 +102,11 @@ function SettingsPageInner() {
     <div>
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-foreground">
-          Settings
+          Configurações
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Everything in one place — your account and your workspace. Pick a
-          section to manage it.
+          Tudo em um só lugar — sua conta e seu espaço de trabalho. Escolha
+          uma seção para gerenciar.
         </p>
       </div>
 

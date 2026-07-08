@@ -1,5 +1,6 @@
 import {
   Banknote,
+  Box,
   Camera,
   Coins,
   FileText,
@@ -35,6 +36,7 @@ export const SETTINGS_SECTIONS = [
   "fields",
   "deals",
   "members",
+  "cubagem",
 ] as const
 
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]
@@ -66,13 +68,13 @@ export const SECTION_META: Record<SettingsSection, SectionMeta> = {
   fields: { id: "fields", label: "Campos e tags", icon: Tags, group: "workspace" },
   deals: { id: "deals", label: "Negócios e moeda", icon: Coins, group: "workspace" },
   members: { id: "members", label: "Membros da equipe", icon: UsersRound, group: "workspace" },
+  cubagem: { id: "cubagem", label: "Inventários", icon: Box, group: "workspace" },
 }
 
 export const AGENT_SECTIONS: readonly SettingsSection[] = [
   "overview",
   "profile",
   "security",
-  "appearance",
 ] as const
 
 export const RAIL_GROUPS: { label: string | null; group: SectionMeta["group"] }[] = [

@@ -239,10 +239,15 @@ export function ContactDetailView({
       toast.error('Falha ao atualizar contato');
     } else {
       // Sync additional phones
-      await supabase
+      const { error: deletePhonesError } = await supabase
         .from('contact_phones')
         .delete()
         .eq('contact_id', contactId);
+      if (deletePhonesError) {
+        toast.error('Falha ao atualizar telefones adicionais');
+        setSavingDetails(false);
+        return;
+      }
 
       const validPhones = editAdditionalPhones.filter((p) => p.phone.trim());
       if (validPhones.length > 0) {
@@ -251,7 +256,14 @@ export function ContactDetailView({
           phone: p.phone.trim(),
           label: p.label,
         }));
-        await supabase.from('contact_phones').insert(phoneRows);
+        const { error: insertPhonesError } = await supabase
+          .from('contact_phones')
+          .insert(phoneRows);
+        if (insertPhonesError) {
+          toast.error('Falha ao atualizar telefones adicionais');
+          setSavingDetails(false);
+          return;
+        }
       }
 
       toast.success('Contato atualizado');
@@ -479,7 +491,7 @@ export function ContactDetailView({
                   value="details"
                   className="data-active:bg-muted data-active:text-primary text-muted-foreground"
                 >
-                  Details
+                  Detalhes
                 </TabsTrigger>
                 <TabsTrigger
                   value="tags"
@@ -491,19 +503,19 @@ export function ContactDetailView({
                   value="notes"
                   className="data-active:bg-muted data-active:text-primary text-muted-foreground"
                 >
-                  Notes
+                  Anotações
                 </TabsTrigger>
                 <TabsTrigger
                   value="custom"
                   className="data-active:bg-muted data-active:text-primary text-muted-foreground"
                 >
-                  Custom Fields
+                  Campos Personalizados
                 </TabsTrigger>
                 <TabsTrigger
                   value="deals"
                   className="data-active:bg-muted data-active:text-primary text-muted-foreground"
                 >
-                  Deals
+                  Negócios
                 </TabsTrigger>
               </TabsList>
 
@@ -753,7 +765,7 @@ export function ContactDetailView({
                       ) : (
                         <Save className="size-3.5" />
                       )}
-                      Save Custom Fields
+                      Salvar Campos Personalizados
                     </Button>
                   </div>
                 )}

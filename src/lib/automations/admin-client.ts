@@ -14,3 +14,17 @@ export function supabaseAdmin(): SupabaseClient {
   }
   return _adminClient
 }
+
+let _internalAdminClient: SupabaseClient | null = null
+
+const INTERNAL_SUPABASE_URL = process.env.SUPABASE_INTERNAL_URL || 'http://127.0.0.1:54321';
+
+export function supabaseInternalAdmin(): SupabaseClient {
+  if (!_internalAdminClient) {
+    _internalAdminClient = createClient(
+      INTERNAL_SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    )
+  }
+  return _internalAdminClient
+}

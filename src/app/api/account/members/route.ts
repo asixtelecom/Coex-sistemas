@@ -17,7 +17,7 @@ import { NextResponse } from "next/server";
 import { getCurrentAccount, requireRole, toErrorResponse } from "@/lib/auth/account";
 import { canManageMembers, isAccountRole } from "@/lib/auth/roles";
 import type { AccountMember } from "@/types"
-import { supabaseAdmin } from "@/lib/automations/admin-client"
+import { supabaseAdmin, supabaseInternalAdmin } from "@/lib/automations/admin-client"
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit";
 
 interface ProfileRow {
@@ -26,6 +26,7 @@ interface ProfileRow {
   email: string | null;
   avatar_url: string | null;
   account_role: string;
+  permissions: Record<string, boolean> | null;
   created_at: string;
 }
 // ============================================================
@@ -58,8 +59,8 @@ export async function POST(request: Request) {
     if (!isAccountRole(role) || role === "owner")
       return NextResponse.json({ error: "Role must be one of admin, agent, viewer" }, { status: 400 });
 
-    const admin = supabaseAdmin();
-    const { data: newUser, error: createError } = await admin.auth.admin.createUser({
+    const internalAdmin = supabaseInternalAdmin();
+    const { data: newUser, error: createError } = await internalAdmin.auth.admin.createUser({
       email,
       password,
       email_confirm: true,
@@ -73,14 +74,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Failed to create user" }, { status: 500 });
     }
 
-    const { error: profileError } = await admin.from("profiles").insert({
+    const admin = supabaseAdmin();
+    const { error: profileError } = await admin.from("profiles").upsert({
       user_id: newUser.user.id, full_name: fullName, email,
       account_id: ctx.accountId, account_role: role,
-    });
+    }, { onConflict: 'user_id', ignoreDuplicates: false });
 
     if (profileError) {
       console.error("[create-agent] profile error:", profileError);
-      await admin.auth.admin.deleteUser(newUser.user.id);
+      await internalAdmin.auth.admin.deleteUser(newUser.user.id);
       return NextResponse.json({ error: "Failed to create profile" }, { status: 500 });
     }
 
@@ -101,7 +103,7 @@ export async function GET() {
     // the caller's, so this query is naturally account-scoped.
     const { data, error } = await ctx.supabase
       .from("profiles")
-      .select("user_id, full_name, email, avatar_url, account_role, created_at")
+      .select("user_id, full_name, email, avatar_url, account_role, permissions, created_at")
       .eq("account_id", ctx.accountId)
       .order("created_at", { ascending: true });
 
@@ -127,6 +129,7 @@ export async function GET() {
           email: canSeeEmails ? row.email : null,
           avatar_url: row.avatar_url,
           role: row.account_role,
+          permissions: row.permissions ?? null,
           joined_at: row.created_at,
         },
       ];

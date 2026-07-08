@@ -17,8 +17,10 @@ import {
   canEditSettings as canEditSettingsFor,
   canManageMembers as canManageMembersFor,
   canSendMessages as canSendMessagesFor,
+  getDefaultPermissions,
   isAccountRole,
   type AccountRole,
+  type FeaturePermissions,
 } from "@/lib/auth/roles";
 
 interface Profile {
@@ -36,6 +38,7 @@ interface Profile {
   account_id: string | null;
   account_role: AccountRole | null;
   system_role: string | null;
+  permissions: Record<string, boolean> | null;
 }
 
 interface AccountSummary {
@@ -44,6 +47,10 @@ interface AccountSummary {
   /** Default deal currency (ISO-4217). NOT NULL DEFAULT 'USD' in the
    *  DB (migration 021); narrowed to DEFAULT_CURRENCY when absent. */
   default_currency: string;
+  logo_url: string | null;
+  footer_text: string | null;
+  endereco: string | null;
+  cnpj: string | null;
 }
 
 interface AuthContextValue {
@@ -105,6 +112,8 @@ interface AuthContextValue {
   canEditOwnProfile: boolean;
   /** True if the caller can send messages and edit operational data (agent+). */
   canSendMessages: boolean;
+  /** Feature-level permissions for non-admin members. Admins/owners always have all. */
+  permissions: FeaturePermissions | null;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -140,7 +149,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // missing account collapses to null rather than a half-
           // populated row (shouldn't happen post-017 NOT NULL, but
           // belt-and-braces against forks running older schemas).
-          "id, full_name, email, avatar_url, role, beta_features, account_id, account_role, system_role, account:accounts!inner(id, name, default_currency)",
+          "id, full_name, email, avatar_url, role, beta_features, account_id, account_role, system_role, permissions, account:accounts!inner(id, name, default_currency, logo_url, footer_text, endereco, cnpj)",
         )
         .eq("user_id", userId)
         .maybeSingle();
@@ -166,6 +175,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               id: string;
               name: string;
               default_currency: string | null;
+              logo_url: string | null;
+              footer_text: string | null;
+              endereco: string | null;
+              cnpj: string | null;
             } | null);
         // Narrow default_currency defensively: forks running pre-021
         // schemas won't have the column, so a missing/null value reads
@@ -175,6 +188,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               id: accountRaw.id,
               name: accountRaw.name,
               default_currency: accountRaw.default_currency ?? DEFAULT_CURRENCY,
+              logo_url: accountRaw.logo_url ?? null,
+              footer_text: accountRaw.footer_text ?? null,
+              endereco: accountRaw.endereco ?? null,
+              cnpj: accountRaw.cnpj ?? null,
             }
           : null;
 
@@ -201,6 +218,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           account_id: data.account_id ?? null,
           account_role: accountRole,
           system_role: data.system_role,
+          permissions: data.permissions ?? null,
         });
         setAccount(accountRow);
       }
@@ -276,12 +294,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     });
 
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible" && user?.id) {
+        fetchProfile(user.id);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
     return () => {
       mounted = false;
       clearTimeout(safetyTimer);
       subscription.unsubscribe();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [fetchProfile]);
+  }, [fetchProfile, user?.id]);
 
   const signOut = useCallback(async () => {
     const supabase = createClient();
@@ -303,6 +329,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // dependencies downstream.
   const derived = useMemo(() => {
     const role = profile?.account_role ?? null;
+    const rawPerms = profile?.permissions as Record<string, boolean> | null | undefined;
+    const defaultPerms = role ? getDefaultPermissions(role) : null;
     return {
       accountRole: role,
       isSystemAdmin: profile?.system_role === "super_admin",
@@ -315,8 +343,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       canEditSettings: role ? canEditSettingsFor(role) : false,
       canEditOwnProfile: role ? canEditOwnProfileFor(role) : false,
       canSendMessages: role ? canSendMessagesFor(role) : false,
+      permissions: {
+        broadcasts: rawPerms?.broadcasts ?? defaultPerms?.broadcasts ?? false,
+        automations: rawPerms?.automations ?? defaultPerms?.automations ?? false,
+        flows: rawPerms?.flows ?? defaultPerms?.flows ?? false,
+        pedidos: rawPerms?.pedidos ?? defaultPerms?.pedidos ?? false,
+        pagamentos: rawPerms?.pagamentos ?? defaultPerms?.pagamentos ?? false,
+        assinaturas: rawPerms?.assinaturas ?? defaultPerms?.assinaturas ?? false,
+        inventario: rawPerms?.inventario ?? defaultPerms?.inventario ?? false,
+        dashboard: rawPerms?.dashboard ?? defaultPerms?.dashboard ?? false,
+        inbox: rawPerms?.inbox ?? defaultPerms?.inbox ?? false,
+        email: rawPerms?.email ?? defaultPerms?.email ?? false,
+        agenda: rawPerms?.agenda ?? defaultPerms?.agenda ?? false,
+        contacts: rawPerms?.contacts ?? defaultPerms?.contacts ?? false,
+        pipelines: rawPerms?.pipelines ?? defaultPerms?.pipelines ?? false,
+      } as FeaturePermissions,
     };
-  }, [profile?.account_role, profile?.account_id]);
+  }, [profile?.account_role, profile?.account_id, profile?.permissions]);
 
   return (
     <AuthContext.Provider
@@ -369,6 +412,7 @@ export function useAuth(): AuthContextValue {
       canEditSettings: false,
       canEditOwnProfile: false,
       canSendMessages: false,
+      permissions: null,
     };
   }
   return ctx;

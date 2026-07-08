@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import type { Contact, Tag, ContactTag } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Table,
   TableBody,
@@ -42,12 +43,15 @@ import {
   ChevronRight,
   SlidersHorizontal,
   Smartphone,
+  Lock,
+  AlertCircle,
 } from 'lucide-react';
 import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
 import { ImportModal } from '@/components/contacts/import-modal';
 import { CustomFieldsManager } from '@/components/contacts/custom-fields-manager';
 import { useCan } from '@/hooks/use-can';
+import { useAuth } from '@/hooks/use-auth';
 import { GatedButton } from '@/components/ui/gated-button';
 import { Checkbox } from '@/components/ui/checkbox';
 
@@ -61,6 +65,7 @@ export default function ContactsPage() {
   const supabase = createClient();
   const canEdit = useCan('send-messages');
   const canEditSettings = useCan('edit-settings');
+  const { user } = useAuth();
 
   const [contacts, setContacts] = useState<ContactWithTags[]>([]);
   const [loading, setLoading] = useState(true);
@@ -79,10 +84,14 @@ export default function ContactsPage() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Contact | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deletePasswordError, setDeletePasswordError] = useState('');
 
   // Bulk selection (page-scoped — only the loaded rows are selectable)
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkDeletePassword, setBulkDeletePassword] = useState('');
+  const [bulkDeletePasswordError, setBulkDeletePasswordError] = useState('');
 
   // All tags for display
   const [tagsMap, setTagsMap] = useState<Record<string, Tag>>({});
@@ -209,12 +218,33 @@ export default function ContactsPage() {
 
   function confirmDelete(contact: Contact) {
     setDeleteTarget(contact);
+    setDeletePassword('');
+    setDeletePasswordError('');
     setDeleteConfirmOpen(true);
   }
 
   async function handleDelete() {
-    if (!deleteTarget) return;
+    if (!deleteTarget || !user?.email) return;
+
+    if (!deletePassword) {
+      setDeletePasswordError('Digite sua senha para confirmar a exclusão');
+      return;
+    }
+
     setDeleting(true);
+    setDeletePasswordError('');
+
+    const verifyRes = await fetch('/api/auth/verify-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: user.email, password: deletePassword }),
+    });
+
+    if (!verifyRes.ok) {
+      setDeletePasswordError('Senha incorreta');
+      setDeleting(false);
+      return;
+    }
 
     const { error } = await supabase
       .from('contacts')
@@ -222,15 +252,16 @@ export default function ContactsPage() {
       .eq('id', deleteTarget.id);
 
     if (error) {
-      toast.error('Failed to delete contact');
+      toast.error('Falha ao excluir contato');
     } else {
-      toast.success('Contact deleted');
+      toast.success('Contato excluído');
       fetchContacts();
     }
 
     setDeleting(false);
     setDeleteConfirmOpen(false);
     setDeleteTarget(null);
+    setDeletePassword('');
   }
 
   const allOnPageSelected =
@@ -260,21 +291,41 @@ export default function ContactsPage() {
 
   async function handleBulkDelete() {
     const ids = [...selected];
-    if (ids.length === 0) return;
+    if (ids.length === 0 || !user?.email) return;
+
+    if (!bulkDeletePassword) {
+      setBulkDeletePasswordError('Digite sua senha para confirmar a exclusão');
+      return;
+    }
+
     setDeleting(true);
+    setBulkDeletePasswordError('');
+
+    const verifyRes = await fetch('/api/auth/verify-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: user.email, password: bulkDeletePassword }),
+    });
+
+    if (!verifyRes.ok) {
+      setBulkDeletePasswordError('Senha incorreta');
+      setDeleting(false);
+      return;
+    }
 
     const { error } = await supabase.from('contacts').delete().in('id', ids);
 
     if (error) {
-      toast.error('Failed to delete contacts');
+      toast.error('Falha ao excluir contatos');
     } else {
-      toast.success(`${ids.length} contact${ids.length === 1 ? '' : 's'} deleted`);
+      toast.success(`${ids.length} ${ids.length === 1 ? 'contato' : 'contatos'} excluído${ids.length === 1 ? '' : 's'}`);
       setSelected(new Set());
       fetchContacts();
     }
 
     setDeleting(false);
     setBulkDeleteOpen(false);
+    setBulkDeletePassword('');
   }
 
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
@@ -634,7 +685,7 @@ export default function ContactsPage() {
       )}
 
       {/* Delete Confirmation */}
-      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+      <Dialog open={deleteConfirmOpen} onOpenChange={(open) => { if (!open) { setDeletePassword(''); setDeletePasswordError(''); } setDeleteConfirmOpen(open); }}>
         <DialogContent className="bg-popover border-border text-popover-foreground sm:max-w-sm">
           <DialogHeader>
             <DialogTitle className="text-popover-foreground">Excluir Contato</DialogTitle>
@@ -646,10 +697,33 @@ export default function ContactsPage() {
                ? Esta ação não pode ser desfeita.
             </DialogDescription>
           </DialogHeader>
+
+          <div className="space-y-2 px-6">
+            <Label htmlFor="delete-password" className="text-muted-foreground text-sm flex items-center gap-1.5">
+              <Lock className="size-3.5" />
+              Confirme sua senha para excluir
+            </Label>
+            <Input
+              id="delete-password"
+              type="password"
+              placeholder="Sua senha"
+              value={deletePassword}
+              onChange={(e) => { setDeletePassword(e.target.value); setDeletePasswordError(''); }}
+              disabled={deleting}
+              autoFocus
+            />
+            {deletePasswordError && (
+              <p className="flex items-center gap-1 text-xs text-red-400">
+                <AlertCircle className="size-3" />
+                {deletePasswordError}
+              </p>
+            )}
+          </div>
+
           <DialogFooter className="bg-popover border-border">
               <Button
                 variant="outline"
-                onClick={() => setDeleteConfirmOpen(false)}
+                onClick={() => { setDeleteConfirmOpen(false); setDeletePassword(''); setDeletePasswordError(''); }}
                 className="border-border text-muted-foreground hover:bg-muted"
               >
                 Cancelar
@@ -667,7 +741,7 @@ export default function ContactsPage() {
       </Dialog>
 
       {/* Bulk Delete Confirmation */}
-      <Dialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+      <Dialog open={bulkDeleteOpen} onOpenChange={(open) => { if (!open) { setBulkDeletePassword(''); setBulkDeletePasswordError(''); } setBulkDeleteOpen(open); }}>
         <DialogContent className="bg-popover border-border text-popover-foreground sm:max-w-sm">
           <DialogHeader>
             <DialogTitle className="text-popover-foreground">
@@ -681,10 +755,33 @@ export default function ContactsPage() {
               ? Esta ação não pode ser desfeita.
             </DialogDescription>
           </DialogHeader>
+
+          <div className="space-y-2 px-6">
+            <Label htmlFor="bulk-delete-password" className="text-muted-foreground text-sm flex items-center gap-1.5">
+              <Lock className="size-3.5" />
+              Confirme sua senha para excluir
+            </Label>
+            <Input
+              id="bulk-delete-password"
+              type="password"
+              placeholder="Sua senha"
+              value={bulkDeletePassword}
+              onChange={(e) => { setBulkDeletePassword(e.target.value); setBulkDeletePasswordError(''); }}
+              disabled={deleting}
+              autoFocus
+            />
+            {bulkDeletePasswordError && (
+              <p className="flex items-center gap-1 text-xs text-red-400">
+                <AlertCircle className="size-3" />
+                {bulkDeletePasswordError}
+              </p>
+            )}
+          </div>
+
           <DialogFooter className="bg-popover border-border">
             <Button
               variant="outline"
-              onClick={() => setBulkDeleteOpen(false)}
+              onClick={() => { setBulkDeleteOpen(false); setBulkDeletePassword(''); setBulkDeletePasswordError(''); }}
               className="border-border text-muted-foreground hover:bg-muted"
             >
               Cancelar

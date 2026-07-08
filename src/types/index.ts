@@ -68,6 +68,7 @@ export interface AccountMember {
   avatar_url: string | null;
   role: AccountRole;
   joined_at: string;
+  permissions: Record<string, boolean> | null;
 }
 
 /**
@@ -228,6 +229,7 @@ export interface MessageReaction {
 export interface WhatsAppConfig {
   id: string;
   user_id: string;
+  account_id: string;
   phone_number_id: string;
   waba_id?: string;
   access_token: string;
@@ -244,6 +246,12 @@ export interface WhatsAppConfig {
   subscribed_apps_at?: string;
   /** Last error from /register; cleared on success. */
   last_registration_error?: string;
+  /** UUID route token for webhook. Auto-generated. */
+  channel_token?: string;
+  /** Human-friendly phone label (e.g. "11 99999-0009"). */
+  display_phone?: string;
+  /** Friendly name (e.g. "Alphaville"). */
+  name?: string;
 }
 export type ChannelType = 'whatsapp' | 'instagram' | 'messenger' | 'telegram' | 'webchat' | 'linkedin';
 

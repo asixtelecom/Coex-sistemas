@@ -12,20 +12,21 @@ export async function PATCH(
   const { id } = await params
   const body = await req.json()
 
+  const updates: Record<string, unknown> = {}
+  if (body.title !== undefined) updates.title = body.title
+  if (body.description !== undefined) updates.description = body.description
+  if (body.location !== undefined) updates.location = body.location
+  if (body.event_type !== undefined) updates.event_type = body.event_type
+  if (body.color !== undefined) updates.color = body.color
+  if (body.all_day !== undefined) updates.all_day = body.all_day
+  if (body.start_at !== undefined) updates.start_at = body.start_at
+  if (body.end_at !== undefined) updates.end_at = body.end_at
+  if (body.status !== undefined) updates.status = body.status
+  if (body.reminders !== undefined) updates.reminders = body.reminders
+
   const { error } = await supabase
     .from("calendar_events")
-    .update({
-      title: body.title,
-      description: body.description || null,
-      location: body.location || null,
-      event_type: body.event_type || "event",
-      color: body.color || undefined,
-      all_day: body.all_day || false,
-      start_at: body.start_at,
-      end_at: body.end_at || null,
-      status: body.status || "scheduled",
-      reminders: body.reminders || [],
-    })
+    .update(updates)
     .eq("id", id)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

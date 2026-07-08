@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
@@ -31,8 +31,12 @@ import {
   DollarSign,
   Loader2,
   Search,
+  MapPin,
 } from "lucide-react";
 import { toast } from "sonner";
+import dynamic from "next/dynamic";
+
+const MapPopup = dynamic(() => import("./map-popup").then((m) => m.MapPopup), { ssr: false });
 
 interface DealFormProps {
   open: boolean;
@@ -42,6 +46,11 @@ interface DealFormProps {
   stages: PipelineStage[];
   defaultStageId?: string;
   onSaved: () => void;
+  dismissible?: boolean;
+  initialContact?: Contact | null;
+  conversationId?: string;
+  hideOverlay?: boolean;
+  inline?: boolean;
 }
 
 export function DealForm({
@@ -50,8 +59,13 @@ export function DealForm({
   deal,
   pipelineId,
   stages,
-  defaultStageId,
+  defaultStageId: defaultStageIdProp,
   onSaved,
+  dismissible = true,
+  initialContact,
+  conversationId,
+  hideOverlay,
+  inline,
 }: DealFormProps) {
   const supabase = createClient();
   const { accountId, defaultCurrency } = useAuth();
@@ -72,8 +86,11 @@ export function DealForm({
   const [expectedCloseDate, setExpectedCloseDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [propertyType, setPropertyType] = useState("");
+  const [boxNumber, setBoxNumber] = useState("");
   const [originAddress, setOriginAddress] = useState("");
   const [destinationAddress, setDestinationAddress] = useState("");
+  const [showOriginMap, setShowOriginMap] = useState(false);
+  const [showDestMap, setShowDestMap] = useState(false);
   const [notes, setNotes] = useState("");
 
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -82,8 +99,12 @@ export function DealForm({
     useState<Conversation | null>(null);
 
   const [saving, setSaving] = useState(false);
+  const [fetchingCnpj, setFetchingCnpj] = useState(false);
+  const lastCnpjRef = useRef('');
   const [statusAction, setStatusAction] = useState<DealStatus | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const formMode = title === "Guarda Volume" ? "guarda-volume" : "lead";
+
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   // Reset the form fields every time the sheet opens or its input
@@ -111,6 +132,7 @@ export function DealForm({
       setExpectedCloseDate(deal.expected_close_date ?? "");
       setEndDate(deal.end_date ?? "");
       setPropertyType(deal.property_type ?? "");
+      setBoxNumber(deal.property_type ?? "");
       setOriginAddress(deal.origin_address ?? "");
       setDestinationAddress(deal.destination_address ?? "");
       setNotes(deal.notes ?? "");
@@ -118,23 +140,24 @@ export function DealForm({
       setTitle("");
       setValue("");
       setCurrency(defaultCurrency);
-      setContactId("");
-      setContactName("");
-      setContactDocument("");
-      setContactPhone("");
-      setContactEmail("");
-      setContactCompany("");
-      setContactSearch("");
-      setStageId(defaultStageId || stages[0]?.id || "");
+      setContactId(initialContact?.id ?? "");
+      setContactName(initialContact?.name ?? "");
+      setContactDocument(initialContact?.document ?? "");
+      setContactPhone(initialContact?.phone ?? "");
+      setContactEmail(initialContact?.email ?? "");
+      setContactCompany(initialContact?.company ?? "");
+      setContactSearch(initialContact?.name ?? "");
+      setStageId(defaultStageIdProp || stages[0]?.id || "");
       setAssignedTo("");
       setExpectedCloseDate("");
       setEndDate("");
       setPropertyType("");
+      setBoxNumber("");
       setOriginAddress("");
       setDestinationAddress("");
       setNotes("");
     }
-  }, [open, deal, defaultStageId, stages, defaultCurrency]);
+  }, [open, deal, defaultStageIdProp, stages, defaultCurrency, initialContact]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   // Load supporting data once the sheet is open
@@ -181,6 +204,38 @@ export function DealForm({
     };
   }, [open, contactId, supabase]);
 
+  const fetchCnpjData = useCallback(async (cnpjDigits: string) => {
+    if (lastCnpjRef.current === cnpjDigits) return;
+    lastCnpjRef.current = cnpjDigits;
+    setFetchingCnpj(true);
+    try {
+      const res = await fetch(`/api/cnpj/lookup?cnpj=${cnpjDigits}`);
+      if (!res.ok) {
+        const err = await res.json();
+        if (res.status !== 404) toast.error(err.error || 'Erro ao consultar CNPJ');
+        return;
+      }
+      const data = await res.json();
+      setContactName(prev => data.name || prev || '');
+      setContactEmail(prev => data.email || prev || '');
+      setContactPhone(prev => data.phone ? data.phone.replace(/\D/g, '') : prev || '');
+      setContactCompany(prev => data.name || prev || '');
+      setOriginAddress(prev => data.address || prev || '');
+    } catch {
+      toast.error('Erro ao consultar CNPJ');
+    } finally {
+      setFetchingCnpj(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (deal) return;
+    const digits = contactDocument.replace(/\D/g, '');
+    if (digits.length === 14) {
+      fetchCnpjData(digits);
+    }
+  }, [contactDocument, fetchCnpjData, deal]);
+
   function formatPhone(value: string) {
     const digits = value.replace(/\D/g, '').slice(0, 11);
     if (digits.length <= 2) return digits.length ? `(${digits}` : '';
@@ -193,6 +248,23 @@ export function DealForm({
     return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
   }
 
+  function formatDocument(value: string) {
+    const digits = value.replace(/\D/g, '').slice(0, 14);
+    if (digits.length <= 11) {
+      return digits
+        .replace(/^(\d{3})(\d)/, '$1.$2')
+        .replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3')
+        .replace(/^(\d{3})\.(\d{3})\.(\d{3})(\d)/, '$1.$2.$3-$4')
+        .slice(0, 14);
+    }
+    return digits
+      .replace(/^(\d{2})(\d)/, '$1.$2')
+      .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
+      .replace(/^(\d{2})\.(\d{3})\.(\d{3})(\d)/, '$1.$2.$3/$4')
+      .replace(/^(\d{2})\.(\d{3})\.(\d{3})\/(\d{4})(\d)/, '$1.$2.$3/$4-$5')
+      .slice(0, 18);
+  }
+
   async function handleSave() {
     if (!title.trim() || !contactPhone.trim() || !stageId) {
       toast.error("Serviço, telefone e estágio são obrigatórios");
@@ -201,6 +273,7 @@ export function DealForm({
     setSaving(true);
 
     // Save/update contact data first
+    let resolvedContactId = contactId;
     const contactPayload = {
       name: contactName.trim() || null,
       phone: contactPhone.trim(),
@@ -209,11 +282,11 @@ export function DealForm({
       company: contactCompany.trim() || null,
     };
 
-    if (contactId) {
+    if (resolvedContactId) {
       const { error: contactError } = await supabase
         .from("contacts")
         .update({ ...contactPayload, updated_at: new Date().toISOString() })
-        .eq("id", contactId);
+        .eq("id", resolvedContactId);
       if (contactError) {
         toast.error("Falha ao salvar contato");
         setSaving(false);
@@ -231,29 +304,51 @@ export function DealForm({
         .from("contacts")
         .insert({ ...contactPayload, user_id: user.id, account_id: accountId })
         .select("id")
-        .single();
-      if (contactError) {
+        .maybeSingle();
+      if (contactError && contactError.code === "23505") {
+        // Contact with this phone already exists — find it
+        const normalizedPhone = contactPhone.replace(/\D/g, '');
+        const { data: existing } = await supabase
+          .from("contacts")
+          .select("id")
+          .eq("account_id", accountId)
+          .eq("phone_normalized", normalizedPhone)
+          .maybeSingle();
+        if (existing) {
+          resolvedContactId = existing.id;
+          setContactId(resolvedContactId);
+        } else {
+          console.error("Erro ao criar contato:", contactError);
+          toast.error("Falha ao criar contato");
+          setSaving(false);
+          return;
+        }
+      } else if (contactError) {
+        console.error("Erro ao criar contato:", contactError);
         toast.error("Falha ao criar contato");
         setSaving(false);
         return;
+      } else {
+        resolvedContactId = newContact!.id;
+        setContactId(resolvedContactId);
       }
-      setContactId(newContact.id);
     }
 
     const payload = {
       title: title.trim(),
       value: parseFloat(value) || 0,
       currency,
-      contact_id: contactId,
+      contact_id: resolvedContactId,
       pipeline_id: pipelineId,
       stage_id: stageId,
       assigned_to: assignedTo || null,
       notes: notes.trim() || null,
       expected_close_date: expectedCloseDate || null,
       end_date: endDate || null,
-      property_type: propertyType || null,
+      property_type: formMode === "guarda-volume" ? boxNumber.trim() || null : propertyType.trim() || null,
       origin_address: originAddress.trim() || null,
       destination_address: destinationAddress.trim() || null,
+      conversation_id: conversationId || null,
     };
 
     if (deal) {
@@ -276,10 +371,13 @@ export function DealForm({
         setSaving(false);
         return;
       }
-      const { error } = await supabase
+      const insertPayload = { ...payload, user_id: user.id, account_id: accountId, status: "open" };
+      console.log("Insert deal payload:", JSON.stringify(insertPayload));
+      const { error: insertError } = await supabase
         .from("deals")
-        .insert({ ...payload, user_id: user.id, account_id: accountId, status: "open" });
-      if (error) {
+        .insert(insertPayload);
+      if (insertError) {
+        console.error("Erro ao inserir deal:", insertError);
         toast.error("Falha ao criar negócio");
         setSaving(false);
         return;
@@ -326,18 +424,22 @@ export function DealForm({
     onSaved();
   }
 
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="right"
-        className="bg-popover border-border text-popover-foreground sm:max-w-lg w-full p-0"
-      >
-        <div className="flex h-full flex-col">
-          <SheetHeader className="border-b border-border/50 p-4">
-            <SheetTitle className="text-popover-foreground">
-              {deal ? "Editar Negócio" : "Tipo de Serviços"}
-            </SheetTitle>
-          </SheetHeader>
+  const formContent = (
+    <div className="flex h-full flex-col">
+      <div className="flex items-center justify-between border-b border-border/50 p-4">
+        <h2 className="text-base font-medium text-popover-foreground">
+          {deal ? (formMode === "guarda-volume" ? "Editar Contrato" : "Editar Lead") : (formMode === "guarda-volume" ? "Novo Contrato Guarda Volume" : "Novo Lead")}
+        </h2>
+        {inline && (
+          <button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+      </div>
 
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             <div className="grid gap-2">
@@ -361,6 +463,17 @@ export function DealForm({
                 <option value="Transporte">Transporte</option>
               </select>
             </div>
+
+            {formMode === "guarda-volume" && (
+              <div className="grid gap-2">
+                <Label className="text-muted-foreground">Número do Box</Label>
+                <Input
+                  value={boxNumber}
+                  onChange={(e) => setBoxNumber(e.target.value)}
+                  placeholder="Ex: 03"
+                />
+              </div>
+            )}
 
             <div className="grid gap-2">
               <Label className="text-muted-foreground">Buscar contato existente</Label>
@@ -452,14 +565,19 @@ export function DealForm({
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="df-document" className="text-muted-foreground">CNPJ</Label>
-              <Input
-                id="df-document"
-                value={contactDocument}
-                onChange={(e) => setContactDocument(e.target.value)}
-                placeholder="00.000.000/0000-00"
-                className="border-border bg-muted text-foreground"
-              />
+              <Label htmlFor="df-document" className="text-muted-foreground">CPF / CNPJ</Label>
+              <div className="relative">
+                <Input
+                  id="df-document"
+                  value={formatDocument(contactDocument)}
+                  onChange={(e) => setContactDocument(e.target.value.replace(/\D/g, ''))}
+                  placeholder="Informe"
+                  className="border-border bg-muted text-foreground"
+                />
+                {fetchingCnpj && (
+                  <Loader2 className="absolute right-3 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+                )}
+              </div>
             </div>
 
             <div className="grid gap-2">
@@ -516,26 +634,61 @@ export function DealForm({
 
             <div className="grid gap-2">
               <Label className="text-muted-foreground">Endereço de origem</Label>
-              <Input
-                value={originAddress}
-                onChange={(e) => setOriginAddress(e.target.value)}
-                placeholder="Rua, número, bairro, cidade"
-                className="border-border bg-muted text-foreground"
-              />
+              <div className="relative">
+                <Input
+                  value={originAddress}
+                  onChange={(e) => setOriginAddress(e.target.value)}
+                  placeholder="Rua, número, bairro, cidade"
+                  className="border-border bg-muted text-foreground pr-9"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowOriginMap(true)}
+                  disabled={!originAddress.trim()}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 size-7 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted-foreground/10 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                  title="Ver no mapa"
+                >
+                  <MapPin className="size-3.5" />
+                </button>
+              </div>
             </div>
 
             <div className="grid gap-2">
               <Label className="text-muted-foreground">Endereço de destino</Label>
-              <Input
-                value={destinationAddress}
-                onChange={(e) => setDestinationAddress(e.target.value)}
-                placeholder="Rua, número, bairro, cidade"
-                className="border-border bg-muted text-foreground"
-              />
+              <div className="relative">
+                <Input
+                  value={destinationAddress}
+                  onChange={(e) => setDestinationAddress(e.target.value)}
+                  placeholder="Rua, número, bairro, cidade"
+                  className="border-border bg-muted text-foreground pr-9"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowDestMap(true)}
+                  disabled={!destinationAddress.trim()}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 size-7 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted-foreground/10 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                  title="Ver no mapa"
+                >
+                  <MapPin className="size-3.5" />
+                </button>
+              </div>
             </div>
 
+            <MapPopup
+              open={showOriginMap}
+              onOpenChange={setShowOriginMap}
+              address={originAddress}
+              label="Endereço de origem"
+            />
+            <MapPopup
+              open={showDestMap}
+              onOpenChange={setShowDestMap}
+              address={destinationAddress}
+              label="Endereço de destino"
+            />
+
             <div className="grid gap-2">
-              <Label className="text-muted-foreground">Valor</Label>
+              <Label className="text-muted-foreground">{formMode === "guarda-volume" ? "Valor Mensal" : "Valor"}</Label>
               <div className="relative">
                 <DollarSign className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -616,7 +769,7 @@ export function DealForm({
             </div>
 
             <div className="grid gap-2">
-              <Label className="text-muted-foreground">Observações</Label>
+              <Label className="text-muted-foreground">{formMode === "guarda-volume" ? "Observações do Contrato" : "Dados da Mudança"}</Label>
               <Textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
@@ -625,7 +778,7 @@ export function DealForm({
               />
             </div>
 
-            {deal && (
+            {formMode !== "guarda-volume" && deal && (
               <div className="space-y-2 rounded-lg border border-border bg-muted/50 p-3">
                 <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                   Situação
@@ -691,14 +844,14 @@ export function DealForm({
                 disabled={saving || !title.trim() || !contactPhone.trim() || !stageId}
                 className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90"
               >
-                {saving ? "Salvando..." : deal ? "Salvar Alterações" : "Criar Negócio"}
+                {saving ? "Salvando..." : deal ? "Salvar Alterações" : formMode === "guarda-volume" ? "Criar Contrato" : "Criar Negócio"}
               </Button>
             </div>
 
             {deal &&
               (confirmDelete ? (
                 <div className="mt-3 flex items-center justify-between gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs">
-                  <span className="text-red-300">Excluir este negócio?</span>
+                  <span className="text-red-300">Excluir este contrato?</span>
                   <div className="flex gap-1">
                     <button
                       type="button"
@@ -725,11 +878,40 @@ export function DealForm({
                   className="mt-3 flex w-full items-center justify-center gap-1 text-xs text-red-400 hover:text-red-300"
                 >
                   <Trash2 className="h-3 w-3" />
-                  Excluir Negócio
+                  Excluir Contrato
                 </button>
               ))}
           </div>
-        </div>
+    </div>
+  );
+
+  if (inline) {
+    return open ? (
+      <div className="flex h-full w-96 flex-shrink-0 flex-col overflow-hidden border-l border-border bg-popover">
+        {formContent}
+      </div>
+    ) : null;
+  }
+
+  return (
+    <Sheet
+      open={open}
+      modal={!hideOverlay}
+      onOpenChange={(nextOpen, event) => {
+        if (!dismissible && !nextOpen && event) {
+          const reason = (event as any).reason;
+          if (reason === "outsidePress" || reason === "escapeKey") return;
+        }
+        onOpenChange(nextOpen);
+      }}
+      disablePointerDismissal={!dismissible}
+    >
+      <SheetContent
+        side="right"
+        hideOverlay={hideOverlay}
+        className="bg-popover border-border text-popover-foreground sm:max-w-lg w-full p-0"
+      >
+        {formContent}
       </SheetContent>
     </Sheet>
   );

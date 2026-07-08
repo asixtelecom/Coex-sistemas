@@ -1,0 +1,49 @@
+
+
+
+
+
+
+
+
+=== CORREÇÃO WEBHOOK WHATSAPP META ===
+Data: 30/06/2026
+
+Problema: verify_token estava NULL no banco de dados.
+Solução: Inserido verify_token criptografado na tabela whatsapp_config.
+
+------------------------------------------------------
+CONFIGURE NO META DEVELOPERS:
+------------------------------------------------------
+
+URL de Callback:
+https://coexsistemas.techvoz.com.br/api/whatsapp/webhook/fb07db0c-a09a-445a-8862-4a491fae393a
+
+Verify Token:
+coexsistemas_webhook_2024
+
+------------------------------------------------------
+TESTE REALIZADO:
+------------------------------------------------------
+- Local (porta 3006): 200 OK - retorna challenge como text/plain
+- Externo (HTTPS):    200 OK - retorna challenge como text/plain
+
+O webhook agora responde corretamente à verificação do Meta.
+
+------------------------------------------------------
+PÁGINAS LEGAIS (para App Review do Meta):
+------------------------------------------------------
+Política de Privacidade:
+https://coexsistemas.techvoz.com.br/privacidade
+
+Termos de Serviço:
+https://coexsistemas.techvoz.com.br/termos
+
+Instruções de Exclusão de Dados:
+https://coexsistemas.techvoz.com.br/exclusao-de-dados
+
+------------------------------------------------------
+TESTES DO POST WEBHOOK (assinatura HMAC):
+------------------------------------------------------
+- Assinatura válida:   200 {"status":"received"}
+- Assinatura inválida: 401

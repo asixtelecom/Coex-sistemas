@@ -35,9 +35,12 @@ function useIsClient() {
 export function ThemedToaster() {
   const { mode } = useTheme();
   const isClient = useIsClient();
+  const sonnerTheme = isClient
+    ? (mode === "graphite" ? "dark" : mode)
+    : (DEFAULT_MODE === "graphite" ? "dark" : DEFAULT_MODE);
   return (
     <Toaster
-      theme={isClient ? mode : DEFAULT_MODE}
+      theme={sonnerTheme}
       position="top-right"
       toastOptions={{
         style: {

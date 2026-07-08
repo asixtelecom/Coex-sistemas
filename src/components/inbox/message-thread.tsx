@@ -109,6 +109,7 @@ interface MessageThreadProps {
    */
   contactPanelOpen?: boolean;
   onToggleContactPanel?: () => void;
+  onOpenDealForm?: () => void;
 }
 
 function formatDateSeparator(dateStr: string): string {
@@ -167,6 +168,7 @@ export function MessageThread({
   onRefresh,
   contactPanelOpen,
   onToggleContactPanel,
+  onOpenDealForm,
 }: MessageThreadProps) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
@@ -1076,7 +1078,22 @@ export function MessageThread({
             {displayName.charAt(0).toUpperCase()}
           </div>
           <div className="min-w-0">
-            <h2 className="truncate text-sm font-semibold text-foreground">{displayName}</h2>
+            <h2 className="truncate text-sm font-semibold text-foreground flex items-center gap-1.5">
+              {displayName}
+              {conversation.channel?.type === 'whatsapp' && (
+                <span className="shrink-0 rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary leading-none">
+                  {(() => {
+                    const ch = conversation.channel
+                    const dp = ch?.config && typeof ch.config === 'object' && !Array.isArray(ch.config)
+                      ? (ch.config as Record<string, unknown>).display_phone as string | undefined
+                      : undefined
+                    return dp
+                      ? `final ${dp.replace(/\D/g, '').slice(-2)}`
+                      : ch?.name || ''
+                  })()}
+                </span>
+              )}
+            </h2>
             <p className="truncate text-xs text-muted-foreground">{contact.phone}</p>
           </div>
           {/* Session timer badge — hidden on the narrowest phones so
@@ -1302,6 +1319,18 @@ export function MessageThread({
               )}
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {/* Novo Lead button */}
+          {onOpenDealForm && (
+            <button
+              type="button"
+              onClick={onOpenDealForm}
+              title="Novo Lead"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-green-700 transition-colors hover:bg-green-100"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </div>
 

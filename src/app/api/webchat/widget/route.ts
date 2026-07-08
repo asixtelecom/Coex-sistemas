@@ -362,6 +362,55 @@ ip.appendChild(snd);
 win.appendChild(ip);
 document.body.appendChild(win);
 
+// Drag functionality - makes the widget draggable with mouse
+var dragOffsetX = 0, dragOffsetY = 0;
+var dragStartX = 0, dragStartY = 0;
+var isDragging = false, wasDragged = false;
+
+function dragStart(e) {
+  dragStartX = e.clientX;
+  dragStartY = e.clientY;
+  isDragging = true;
+  wasDragged = false;
+  btn.style.transition = 'none';
+  preview.style.animation = 'none';
+  win.style.animation = 'none';
+  document.body.style.cursor = 'grabbing';
+  document.body.style.userSelect = 'none';
+}
+
+document.addEventListener('mousemove', function(e) {
+  if (!isDragging) return;
+  var dx = e.clientX - dragStartX;
+  var dy = e.clientY - dragStartY;
+  dragOffsetX += dx;
+  dragOffsetY += dy;
+  dragStartX = e.clientX;
+  dragStartY = e.clientY;
+  if (Math.abs(dx) > 2 || Math.abs(dy) > 2) wasDragged = true;
+  var t = 'translate(' + dragOffsetX + 'px,' + dragOffsetY + 'px)';
+  btn.style.transform = t;
+  preview.style.transform = t;
+  win.style.transform = t;
+});
+
+document.addEventListener('mouseup', function() {
+  if (!isDragging) return;
+  isDragging = false;
+  btn.style.transition = '';
+  preview.style.animation = '';
+  win.style.animation = '';
+  document.body.style.cursor = '';
+  document.body.style.userSelect = '';
+});
+
+btn.addEventListener('mousedown', dragStart);
+preview.addEventListener('mousedown', dragStart);
+hd.addEventListener('mousedown', function(e) {
+  if (e.target.classList.contains('wc-x')) return;
+  dragStart(e);
+});
+
 btn.onclick = function() {
   preview.classList.add('hidden');
   win.classList.toggle('open');
@@ -394,6 +443,19 @@ preview.onclick = function() {
   if (!pollInterval) {
     pollInterval = setInterval(loadMessages, 3000);
   }
+};
+
+// Prevent click handlers from firing after a drag
+var origBtnClick = btn.onclick;
+btn.onclick = function(e) {
+  if (wasDragged) { wasDragged = false; return; }
+  origBtnClick && origBtnClick.call(this, e);
+};
+
+var origPreviewClick = preview.onclick;
+preview.onclick = function(e) {
+  if (wasDragged) { wasDragged = false; return; }
+  origPreviewClick && origPreviewClick.call(this, e);
 };
 
 // Start the flow after a brief delay only if no messages yet

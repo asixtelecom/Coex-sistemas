@@ -395,7 +395,7 @@ export default function PipelinesPage() {
             className="bg-primary text-primary-foreground hover:bg-primary/90"
           >
             <Plus className="mr-1 h-4 w-4" />
-            Adicionar Negócio
+            Adicionar Lead
           </Button>
         </div>
       </div>

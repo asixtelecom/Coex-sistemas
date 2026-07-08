@@ -33,7 +33,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'type and config are required' }, { status: 400 })
     }
 
-    const validTypes = ['instagram', 'messenger', 'telegram', 'webchat']
+    const validTypes = ['instagram', 'messenger', 'telegram', 'webchat', 'whatsapp']
     if (!validTypes.includes(type)) {
       return NextResponse.json({ error: 'Invalid channel type' }, { status: 400 })
     }

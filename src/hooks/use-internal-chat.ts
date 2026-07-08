@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { toast } from "sonner";
 import type {
   InternalConversation,
   InternalMessage,
@@ -476,6 +477,46 @@ export function useInternalChat(accountId: string | null, currentUserId: string 
     }
   }, [employees, currentUserId, loadConversations]);
 
+  const audioCtxRef = useRef<AudioContext | null>(null)
+
+  const playNotificationSound = useCallback(() => {
+    try {
+      let ctx = audioCtxRef.current
+      if (!ctx) {
+        ctx = new AudioContext()
+        audioCtxRef.current = ctx
+      }
+      if (ctx.state === "suspended") {
+        ctx.resume()
+      }
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.frequency.value = 800
+      osc.type = "sine"
+      gain.gain.setValueAtTime(0.3, ctx.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4)
+      osc.start(ctx.currentTime)
+      osc.stop(ctx.currentTime + 0.4)
+    } catch { /* audio not supported */ }
+  }, [])
+
+  const showDesktopNotification = useCallback((title: string, body: string) => {
+    if (typeof window === "undefined" || !("Notification" in window)) return
+    if (Notification.permission === "granted") {
+      new Notification(title, { body, icon: "/icon.png" })
+    } else if (Notification.permission === "default") {
+      Notification.requestPermission()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission()
+    }
+  }, [])
+
   useEffect(() => {
     if (!currentUserId) return;
     const supabase = createClient();
@@ -487,6 +528,18 @@ export function useInternalChat(accountId: string | null, currentUserId: string 
         { event: "INSERT", schema: "public", table: "internal_messages" },
         async (payload) => {
           const msg = payload.new as InternalMessage;
+          if (msg.sender_id !== currentUserId) {
+            const senderName = employees.find((e) => e.user_id === msg.sender_id)?.full_name ?? "Alguém"
+            playNotificationSound()
+            showDesktopNotification(
+              "Chat Interno - " + senderName,
+              msg.content ?? "[Mídia]"
+            )
+            toast(senderName, {
+              description: msg.content ?? "[Mídia]",
+              duration: 4000,
+            })
+          }
           if (activeConvIdRef.current === msg.conversation_id) {
             const { data: sender } = await supabase
               .from("profiles")
@@ -525,7 +578,11 @@ export function useInternalChat(accountId: string | null, currentUserId: string 
           );
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status !== "SUBSCRIBED") {
+          console.error("InternalChat realtime subscription status:", status);
+        }
+      });
 
     return () => { supabase.removeChannel(channel); };
   }, [currentUserId, markAsRead]);

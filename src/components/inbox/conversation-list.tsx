@@ -590,8 +590,22 @@ function ConversationItem({
         {!isSearching && (
           <div className="min-w-0 flex-1">
             <div className="flex items-center justify-between gap-2">
-              <span className="truncate text-sm font-medium text-foreground">
+              <span className="truncate text-sm font-medium text-foreground flex items-center gap-1.5">
                 {displayName}
+                {conversation.channel?.type === 'whatsapp' && (
+                  <span className="shrink-0 rounded-md bg-primary/10 px-1 py-0.5 text-[10px] font-medium text-primary leading-none">
+                    {(() => {
+                      const ch = conversation.channel
+                      if (!ch) return ''
+                      const dp = ch.config && typeof ch.config === 'object' && !Array.isArray(ch.config)
+                        ? (ch.config as Record<string, unknown>).display_phone as string | undefined
+                        : undefined
+                      return dp
+                        ? dp.replace(/\D/g, '').slice(-2)
+                        : ch.name?.slice(0, 2) || ''
+                    })()}
+                  </span>
+                )}
               </span>
               <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo}</span>
             </div>

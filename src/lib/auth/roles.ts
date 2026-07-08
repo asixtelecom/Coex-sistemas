@@ -1,4 +1,89 @@
 // ============================================================
+// Feature permissions
+//
+// Granular per-feature toggles that can be set per member.
+// Admins/owners always see all features; agents/viewers can be
+// granted individual features.
+// ============================================================
+
+export type FeaturePermission =
+  | 'broadcasts'
+  | 'automations'
+  | 'flows'
+  | 'pedidos'
+  | 'pagamentos'
+  | 'assinaturas'
+  | 'inventario'
+  | 'dashboard'
+  | 'inbox'
+  | 'email'
+  | 'agenda'
+  | 'contacts'
+  | 'pipelines'
+  | 'guarda-volume';
+
+export const FEATURE_PERMISSIONS: readonly FeaturePermission[] = [
+  'broadcasts',
+  'automations',
+  'flows',
+  'pedidos',
+  'pagamentos',
+  'assinaturas',
+  'inventario',
+  'dashboard',
+  'inbox',
+  'email',
+  'agenda',
+  'contacts',
+  'pipelines',
+  'guarda-volume',
+] as const;
+
+export type FeaturePermissions = Record<FeaturePermission, boolean>;
+
+export function getDefaultPermissions(role: AccountRole): FeaturePermissions {
+  const allTrue: FeaturePermissions = {
+    broadcasts: true,
+    automations: true,
+    flows: true,
+    pedidos: true,
+    pagamentos: true,
+    assinaturas: true,
+    inventario: true,
+    dashboard: true,
+    inbox: true,
+    email: true,
+    agenda: true,
+    contacts: true,
+    pipelines: true,
+    'guarda-volume': true,
+  };
+  const allFalse: FeaturePermissions = {
+    broadcasts: false,
+    automations: false,
+    flows: false,
+    pedidos: false,
+    pagamentos: false,
+    assinaturas: false,
+    inventario: false,
+    dashboard: false,
+    inbox: false,
+    email: false,
+    agenda: false,
+    contacts: false,
+    pipelines: false,
+    'guarda-volume': false,
+  };
+  return role === 'owner' || role === 'admin' ? allTrue : allFalse;
+}
+export function hasFeaturePermission(
+  permissions: FeaturePermissions | null | undefined,
+  feature: FeaturePermission,
+): boolean {
+  return permissions?.[feature] ?? false;
+}
+
+// ============================================================
 // Account role helpers — pure, unit-testable, no I/O.
 //
 // Mirrors the `account_role_enum` Postgres type from migration

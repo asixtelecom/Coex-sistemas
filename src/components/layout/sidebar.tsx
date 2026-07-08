@@ -30,7 +30,7 @@ import {
   Calendar,
   CreditCard,
   FileSignature,
-
+  Archive,
 } from "lucide-react";
 import type { AccountRole } from "@/lib/auth/roles";
 
@@ -103,6 +103,7 @@ const navItems: NavItem[] = [
   { href: "/pagamentos", label: "Pagamentos", icon: CreditCard },
   { href: "/assinaturas", label: "Assinaturas", icon: FileSignature },
   { href: "/agenda", label: "Vistoria", icon: Calendar },
+  { href: "/almoxerifado", label: "Almoxerifado", icon: Archive },
   { href: "/contacts", label: "Contatos", icon: Users },
   { href: "/pipelines", label: "Funil de Vendas", icon: GitBranch },
   { href: "/broadcasts", label: "Transmissões", icon: Radio },

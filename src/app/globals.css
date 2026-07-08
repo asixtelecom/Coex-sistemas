@@ -144,6 +144,35 @@ html[data-mode="light"] {
   --sidebar-accent-foreground: oklch(0.25 0.01 260);
   --sidebar-border: oklch(0.922 0.004 260);
 }
+html[data-mode="graphite"] {
+  --background: oklch(0.25 0 0);
+  --foreground: oklch(0.96 0 0);
+  --card: oklch(0.29 0 0);
+  --card-2: oklch(0.31 0 0);
+  --card-foreground: oklch(0.96 0 0);
+  --popover: oklch(0.29 0 0);
+  --popover-foreground: oklch(0.96 0 0);
+  --secondary: oklch(0.32 0 0);
+  --secondary-foreground: oklch(0.96 0 0);
+  --muted: oklch(0.32 0 0);
+  --muted-foreground: oklch(0.62 0 0);
+  --accent: oklch(0.32 0 0);
+  --accent-foreground: oklch(0.96 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.38 0 0);
+  --input: oklch(0.38 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.27 0 0);
+  --sidebar-foreground: oklch(0.96 0 0);
+  --sidebar-accent: oklch(0.32 0 0);
+  --sidebar-accent-foreground: oklch(0.96 0 0);
+  --sidebar-border: oklch(0.38 0 0);
+}
+
 
 /* ---- ACCENT: primary color ---- */
 

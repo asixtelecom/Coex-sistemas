@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { toast } from 'sonner';
@@ -12,13 +12,11 @@ import {
   type ExistingContact,
 } from '@/lib/contacts/dedupe';
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/components/ui/dialog';
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -58,6 +56,8 @@ export function ContactForm({
   const [email, setEmail] = useState('');
   const [company, setCompany] = useState('');
   const [saving, setSaving] = useState(false);
+  const [fetchingCnpj, setFetchingCnpj] = useState(false);
+  const lastCnpjRef = useRef('');
 
   const [additionalPhones, setAdditionalPhones] = useState<AdditionalPhone[]>([]);
 
@@ -84,6 +84,37 @@ export function ContactForm({
       fetchAdditionalPhones();
     }
   }, [open, contact]);
+
+  const fetchCnpjData = useCallback(async (cnpjDigits: string) => {
+    if (lastCnpjRef.current === cnpjDigits) return;
+    lastCnpjRef.current = cnpjDigits;
+    setFetchingCnpj(true);
+    try {
+      const res = await fetch(`/api/cnpj/lookup?cnpj=${cnpjDigits}`);
+      if (!res.ok) {
+        const err = await res.json();
+        if (res.status !== 404) toast.error(err.error || 'Erro ao consultar CNPJ');
+        return;
+      }
+      const data = await res.json();
+      setName(prev => prev || data.name || '');
+      setEmail(prev => prev || data.email || '');
+      setPhone(prev => prev || data.phone.replace(/\D/g, ''));
+      setAddress(prev => prev || data.address || '');
+    } catch {
+      toast.error('Erro ao consultar CNPJ');
+    } finally {
+      setFetchingCnpj(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isEdit) return;
+    const digits = document.replace(/\D/g, '');
+    if (digits.length === 14) {
+      fetchCnpjData(digits);
+    }
+  }, [document, fetchCnpjData, isEdit]);
 
   async function fetchAdditionalPhones() {
     if (!contact?.id) {
@@ -255,10 +286,11 @@ export function ContactForm({
 
       // Sync tags
       if (contactId) {
-        await supabase
+        const { error: deleteTagsError } = await supabase
           .from('contact_tags')
           .delete()
           .eq('contact_id', contactId);
+        if (deleteTagsError) throw deleteTagsError;
 
         if (selectedTagIds.length > 0) {
           const tagRows = selectedTagIds.map((tag_id) => ({
@@ -274,10 +306,11 @@ export function ContactForm({
 
       // Sync additional phones
       if (contactId) {
-        await supabase
+        const { error: deletePhonesError } = await supabase
           .from('contact_phones')
           .delete()
           .eq('contact_id', contactId);
+        if (deletePhonesError) throw deletePhonesError;
 
         const validPhones = additionalPhones.filter((p) => p.phone.trim());
         if (validPhones.length > 0) {
@@ -309,7 +342,12 @@ export function ContactForm({
         }
         return;
       }
-      const message = err instanceof Error ? err.message : 'Falha ao salvar contato';
+      const message =
+        err instanceof Error
+          ? err.message
+          : typeof err === 'object' && err !== null && 'message' in err
+            ? String((err as { message: unknown }).message)
+            : 'Falha ao salvar contato';
       toast.error(message);
     } finally {
       setSaving(false);
@@ -317,241 +355,249 @@ export function ContactForm({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-popover border-border text-popover-foreground sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="text-popover-foreground">
-            {isEdit ? 'Editar Contato' : 'Adicionar Contato'}
-          </DialogTitle>
-          <DialogDescription className="text-muted-foreground">
-            {isEdit
-              ? 'Atualize os detalhes do contato abaixo.'
-              : 'Preencha os detalhes para criar um novo contato.'}
-          </DialogDescription>
-        </DialogHeader>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="cf-name" className="text-muted-foreground">
-              Nome
-            </Label>
-            <Input
-              id="cf-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="João Silva"
-              className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
-            />
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="right"
+        className="bg-popover border-border text-popover-foreground sm:max-w-lg w-full p-0"
+      >
+        <div className="flex h-full flex-col">
+          <div className="flex items-center justify-between border-b border-border/50 p-4">
+            <SheetTitle className="text-base font-medium text-popover-foreground">
+              {isEdit ? 'Editar Contato' : 'Adicionar Contato'}
+            </SheetTitle>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="cf-document" className="text-muted-foreground">
-              CPF / CNPJ
-            </Label>
-            <Input
-              id="cf-document"
-              value={document}
-              onChange={(e) => setDocument(formatDocument(e.target.value))}
-              placeholder="000.000.000-00"
-              className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
-            />
-          </div>
+          <form id="contact-form" onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="cf-name" className="text-muted-foreground">
+                Nome
+              </Label>
+              <Input
+                id="cf-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="João Silva"
+                className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+              />
+            </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="cf-company" className="text-muted-foreground">
-              Empresa
-            </Label>
-            <Input
-              id="cf-company"
-              value={company}
-              onChange={(e) => setCompany(e.target.value)}
-              placeholder="Empresa Ltda."
-              className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
-            />
-          </div>
+            <div className="space-y-2">
+              <Label htmlFor="cf-document" className="text-muted-foreground">
+                CPF / CNPJ
+              </Label>
+              <div className="relative">
+                <Input
+                  id="cf-document"
+                  value={document}
+                  onChange={(e) => setDocument(formatDocument(e.target.value))}
+                  placeholder="000.000.000-00"
+                  className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+                />
+                {fetchingCnpj && (
+                  <Loader2 className="absolute right-3 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+                )}
+              </div>
+            </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="cf-address" className="text-muted-foreground">
-              Endereço
-            </Label>
-            <Input
-              id="cf-address"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              placeholder="Rua, número, bairro, cidade"
-              className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
-            />
-          </div>
+            <div className="space-y-2">
+              <Label htmlFor="cf-company" className="text-muted-foreground">
+                Empresa
+              </Label>
+              <Input
+                id="cf-company"
+                value={company}
+                onChange={(e) => setCompany(e.target.value)}
+                placeholder="Empresa Ltda."
+                className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+              />
+            </div>
 
-          {/* Primary phone */}
-          <div className="space-y-2">
-            <Label htmlFor="cf-phone" className="text-muted-foreground">
-              Telefone Principal <span className="text-red-400">*</span>
-            </Label>
-            <Input
-              id="cf-phone"
-              value={formatPhone(phone)}
-              onChange={(e) => {
-                setPhone(e.target.value.replace(/\D/g, ''));
-                if (dupMatch) setDupMatch(null);
-              }}
-              onBlur={checkDuplicate}
-              placeholder="(11) 99999-9999"
-              className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
-            />
-            {dupMatch ? (
-              <div
-                className={`flex items-start gap-2 rounded-md border px-2.5 py-2 text-xs ${
-                  dupMatch.exact
-                    ? 'border-red-500/40 bg-red-500/10 text-red-300'
-                    : 'border-amber-500/40 bg-amber-500/10 text-amber-300'
-                }`}
+            <div className="space-y-2">
+              <Label htmlFor="cf-address" className="text-muted-foreground">
+                Endereço
+              </Label>
+              <Input
+                id="cf-address"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                placeholder="Rua, número, bairro, cidade"
+                className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+              />
+            </div>
+
+            {/* Primary phone */}
+            <div className="space-y-2">
+              <Label htmlFor="cf-phone" className="text-muted-foreground">
+                Telefone Principal <span className="text-red-400">*</span>
+              </Label>
+              <Input
+                id="cf-phone"
+                value={formatPhone(phone)}
+                onChange={(e) => {
+                  setPhone(e.target.value.replace(/\D/g, ''));
+                  if (dupMatch) setDupMatch(null);
+                }}
+                onBlur={checkDuplicate}
+                placeholder="(11) 99999-9999"
+                className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+              />
+              {dupMatch ? (
+                <div
+                  className={`flex items-start gap-2 rounded-md border px-2.5 py-2 text-xs ${
+                    dupMatch.exact
+                      ? 'border-red-500/40 bg-red-500/10 text-red-300'
+                      : 'border-amber-500/40 bg-amber-500/10 text-amber-300'
+                  }`}
+                >
+                  <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                  <div className="space-y-1">
+                    <p>
+                      {dupMatch.exact
+                        ? 'Já existe um contato com este número de telefone.'
+                        : 'Já existe um contato com um número muito semelhante.'}
+                    </p>
+                    {onViewExisting && (
+                      <button
+                        type="button"
+                        onClick={() => onViewExisting(dupMatch.contact.id)}
+                        className="font-medium underline underline-offset-2 hover:no-underline"
+                      >
+                        Visualizar {dupMatch.contact.name || dupMatch.contact.phone}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Inclua o DDD do estado, ex: 11 para São Paulo
+                </p>
+              )}
+            </div>
+
+            {/* Additional phones */}
+            <div className="space-y-2">
+              <Label className="text-muted-foreground">
+                Telefones Adicionais
+              </Label>
+              {additionalPhones.map((item, index) => (
+                <div key={index} className="flex items-start gap-2">
+                  <div className="flex-1">
+                    <Input
+                      value={formatPhone(item.phone)}
+                      onChange={(e) =>
+                        updateAdditionalPhone(index, e.target.value.replace(/\D/g, ''))
+                      }
+                      placeholder="(11) 99999-9999"
+                      className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+                    />
+                  </div>
+                  <select
+                    value={item.label}
+                    onChange={(e) => updateAdditionalPhoneLabel(index, e.target.value)}
+                    className="h-9 rounded-md border border-border bg-muted px-2 text-xs text-foreground"
+                  >
+                    <option value="commercial">Comercial</option>
+                    <option value="home">Residencial</option>
+                    <option value="other">Outro</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => removePhone(index)}
+                    className="mt-1 text-muted-foreground hover:text-red-400 transition-colors"
+                  >
+                    <X className="size-4" />
+                  </button>
+                </div>
+              ))}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={addPhone}
+                className="border-border text-muted-foreground hover:bg-muted w-full"
               >
-                <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-                <div className="space-y-1">
-                  <p>
-                    {dupMatch.exact
-                      ? 'Já existe um contato com este número de telefone.'
-                      : 'Já existe um contato com um número muito semelhante.'}
-                  </p>
-                  {onViewExisting && (
-                    <button
-                      type="button"
-                      onClick={() => onViewExisting(dupMatch.contact.id)}
-                      className="font-medium underline underline-offset-2 hover:no-underline"
-                    >
-                      Visualizar {dupMatch.contact.name || dupMatch.contact.phone}
-                    </button>
-                  )}
+                <Plus className="size-3.5" />
+                Adicionar telefone
+              </Button>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="cf-email" className="text-muted-foreground">
+                E-mail
+              </Label>
+              <Input
+                id="cf-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="joao@exemplo.com"
+                className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-muted-foreground">Tags</Label>
+              {loadingTags ? (
+                <div className="flex items-center gap-2 text-muted-foreground text-sm">
+                  <Loader2 className="size-3 animate-spin" />
+                  Carregando tags...
                 </div>
-              </div>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                Inclua o DDD do estado, ex: 11 para São Paulo
-              </p>
-            )}
-          </div>
-
-          {/* Additional phones */}
-          <div className="space-y-2">
-            <Label className="text-muted-foreground">
-              Telefones Adicionais
-            </Label>
-            {additionalPhones.map((item, index) => (
-              <div key={index} className="flex items-start gap-2">
-                <div className="flex-1">
-                  <Input
-                    value={formatPhone(item.phone)}
-                    onChange={(e) =>
-                      updateAdditionalPhone(index, e.target.value.replace(/\D/g, ''))
-                    }
-                    placeholder="(11) 99999-9999"
-                    className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
-                  />
+              ) : tags.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  Nenhuma tag disponível. Crie tags em Configurações.
+                </p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {tags.map((tag) => {
+                    const selected = selectedTagIds.includes(tag.id);
+                    return (
+                      <button
+                        key={tag.id}
+                        type="button"
+                        onClick={() => toggleTag(tag.id)}
+                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors cursor-pointer ${
+                          selected
+                            ? 'ring-2 ring-primary ring-offset-1 ring-offset-border'
+                            : 'opacity-60 hover:opacity-100'
+                        }`}
+                        style={{
+                          backgroundColor: tag.color + '20',
+                          color: tag.color,
+                          borderColor: tag.color,
+                        }}
+                      >
+                        {tag.name}
+                      </button>
+                    );
+                  })}
                 </div>
-                <select
-                  value={item.label}
-                  onChange={(e) => updateAdditionalPhoneLabel(index, e.target.value)}
-                  className="h-9 rounded-md border border-border bg-muted px-2 text-xs text-foreground"
-                >
-                  <option value="commercial">Comercial</option>
-                  <option value="home">Residencial</option>
-                  <option value="other">Outro</option>
-                </select>
-                <button
-                  type="button"
-                  onClick={() => removePhone(index)}
-                  className="mt-1 text-muted-foreground hover:text-red-400 transition-colors"
-                >
-                  <X className="size-4" />
-                </button>
-              </div>
-            ))}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={addPhone}
-              className="border-border text-muted-foreground hover:bg-muted w-full"
-            >
-              <Plus className="size-3.5" />
-              Adicionar telefone
-            </Button>
-          </div>
+              )}
+            </div>
+          </form>
 
-          <div className="space-y-2">
-            <Label htmlFor="cf-email" className="text-muted-foreground">
-              E-mail
-            </Label>
-            <Input
-              id="cf-email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="joao@exemplo.com"
-              className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
-            />
+          <div className="border-t border-border/50 bg-popover/80 p-4">
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                className="flex-1 border-border bg-transparent text-muted-foreground hover:bg-muted"
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                form="contact-form"
+                disabled={saving || checkingDup || (!isEdit && !!dupMatch?.exact)}
+                className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground"
+              >
+                {saving && <Loader2 className="size-4 animate-spin" />}
+                {isEdit ? 'Atualizar' : 'Criar'}
+              </Button>
+            </div>
           </div>
-
-          <div className="space-y-2">
-            <Label className="text-muted-foreground">Tags</Label>
-            {loadingTags ? (
-              <div className="flex items-center gap-2 text-muted-foreground text-sm">
-                <Loader2 className="size-3 animate-spin" />
-                Carregando tags...
-              </div>
-            ) : tags.length === 0 ? (
-              <p className="text-xs text-muted-foreground">
-                Nenhuma tag disponível. Crie tags em Configurações.
-              </p>
-            ) : (
-              <div className="flex flex-wrap gap-1.5">
-                {tags.map((tag) => {
-                  const selected = selectedTagIds.includes(tag.id);
-                  return (
-                    <button
-                      key={tag.id}
-                      type="button"
-                      onClick={() => toggleTag(tag.id)}
-                      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors cursor-pointer ${
-                        selected
-                          ? 'ring-2 ring-primary ring-offset-1 ring-offset-border'
-                          : 'opacity-60 hover:opacity-100'
-                      }`}
-                      style={{
-                        backgroundColor: tag.color + '20',
-                        color: tag.color,
-                        borderColor: tag.color,
-                      }}
-                    >
-                      {tag.name}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          <DialogFooter className="bg-popover border-border">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              className="border-border text-muted-foreground hover:bg-muted"
-            >
-              Cancelar
-            </Button>
-            <Button
-              type="submit"
-              disabled={saving || checkingDup || (!isEdit && !!dupMatch?.exact)}
-              className="bg-primary hover:bg-primary/90 text-primary-foreground"
-            >
-              {saving && <Loader2 className="size-4 animate-spin" />}
-              {isEdit ? 'Atualizar' : 'Criar'}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }

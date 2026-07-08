@@ -2,12 +2,13 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Loader2, Upload, Trash2, Mail, CircleAlert } from 'lucide-react';
+import { Loader2, Upload, Trash2, Mail, CircleAlert, FileSignature } from 'lucide-react';
 
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import {
   Avatar,
@@ -37,6 +38,8 @@ export function ProfileForm() {
 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
+  const [emailSignature, setEmailSignature] = useState('');
+  const [originalSignature, setOriginalSignature] = useState('');
   const [pendingAvatar, setPendingAvatar] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [removeAvatar, setRemoveAvatar] = useState(false);
@@ -48,7 +51,25 @@ export function ProfileForm() {
     if (!profile) return;
     setFullName(profile.full_name ?? '');
     setEmail(profile.email ?? '');
-  }, [profile]);
+
+    // Fetch email_signature separately — column may not exist yet in some DBs
+    ;(async () => {
+      try {
+        const { data: sigData } = await supabase
+          .from('profiles')
+          .select('email_signature')
+          .eq('user_id', user?.id)
+          .maybeSingle();
+        if (sigData) {
+          const sig = sigData.email_signature ?? '';
+          setEmailSignature(sig);
+          setOriginalSignature(sig);
+        }
+      } catch {
+        /* column may not exist yet */
+      }
+    })();
+  }, [profile, supabase, user?.id]);
 
   // Cleanup object URLs to avoid leaks.
   useEffect(() => {
@@ -137,7 +158,7 @@ export function ProfileForm() {
         nextAvatarUrl = null;
       }
 
-      // Persist name + avatar to profiles.
+      // Persist name + avatar to profiles (core columns always exist).
       const { error: updateError } = await supabase
         .from('profiles')
         .update({
@@ -147,6 +168,21 @@ export function ProfileForm() {
         .eq('user_id', user.id);
       if (updateError) {
         throw new Error(`Save failed: ${updateError.message}`);
+      }
+
+      // Persist email_signature separately — column may not exist yet
+      // in deployments that haven't run migration 040.
+      const sigTrimmed = emailSignature.trim() || null;
+      if (sigTrimmed !== null) {
+        await supabase
+          .from('profiles')
+          .update({ email_signature: sigTrimmed })
+          .eq('user_id', user.id)
+          .then(({ error: sigErr }) => {
+            if (sigErr && !sigErr.message?.includes('column') && !sigErr.message?.includes('does not exist')) {
+              console.warn('[ProfileForm] failed to save email_signature', sigErr);
+            }
+          });
       }
 
       // Email change goes through Supabase Auth, which emails a
@@ -193,6 +229,7 @@ export function ProfileForm() {
     !!profile &&
     (fullName.trim() !== (profile.full_name ?? '') ||
       email.trim().toLowerCase() !== (profile.email ?? '').toLowerCase() ||
+      emailSignature.trim() !== originalSignature ||
       pendingAvatar !== null ||
       removeAvatar);
 
@@ -298,6 +335,27 @@ export function ProfileForm() {
                 </span>
               </p>
             )}
+          </div>
+
+          {/* Assinatura de E-mail */}
+          <div className="space-y-2">
+            <Label htmlFor="email-signature" className="text-foreground">
+              <FileSignature className="size-3.5 inline mr-1.5 text-muted-foreground" />
+              Assinatura de E-mail
+            </Label>
+            <p className="text-xs text-muted-foreground mb-1">
+              Esta assinatura será anexada automaticamente ao responder e-mails. Use HTML para formatação.
+            </p>
+            <Textarea
+              id="email-signature"
+              value={emailSignature}
+              onChange={(e) => setEmailSignature(e.target.value)}
+              placeholder={`<p>--</p><p><strong>Seu Nome</strong><br/>Sua Empresa<br/>Telefone: (11) 99999-9999</p>`}
+              maxLength={1000}
+              disabled={saving}
+              rows={4}
+              className="font-mono text-sm"
+            />
           </div>
 
           {/* Read-only block */}

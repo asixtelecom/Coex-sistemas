@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
-import { Plus, Loader2, ChevronLeft, ChevronRight, Pencil, Trash2, ExternalLink, Bell, User } from "lucide-react"
+import { Plus, Loader2, ChevronLeft, ChevronRight, Pencil, Trash2, ExternalLink, Bell, User, Check } from "lucide-react"
 import { toast } from "sonner"
 import {
   startOfMonth, endOfMonth, startOfWeek, endOfWeek,
@@ -260,6 +260,22 @@ export default function AgendaPage() {
     }
   }
 
+  const handleConfirmToggle = async (ev: CalendarEvent) => {
+    const newStatus = ev.status === "confirmed" ? "scheduled" : "confirmed"
+    const res = await fetch(`/api/calendar/${ev.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: newStatus }),
+    })
+    const result = await res.json()
+    if (result.updated) {
+      toast.success(newStatus === "confirmed" ? "Evento confirmado!" : "Confirmação removida!")
+      fetchEvents()
+    } else {
+      toast.error("Erro ao atualizar status")
+    }
+  }
+
   const formatDate = (d: string) =>
     new Date(d).toLocaleDateString("pt-BR", {
       day: "2-digit", month: "long", year: "numeric",
@@ -398,6 +414,19 @@ export default function AgendaPage() {
                         <Badge variant={statusMap[ev.status]?.variant || "outline"}>
                           {statusMap[ev.status]?.label || ev.status}
                         </Badge>
+                        {(ev.status === "scheduled" || ev.status === "confirmed") && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleConfirmToggle(ev) }}
+                            className={`p-1.5 rounded-md transition-colors ${
+                              ev.status === "confirmed"
+                                ? "text-emerald-500 hover:text-emerald-600 hover:bg-emerald-500/10"
+                                : "text-muted-foreground hover:text-emerald-500 hover:bg-emerald-500/10"
+                            }`}
+                            title={ev.status === "confirmed" ? "Remover confirmação" : "Confirmar evento"}
+                          >
+                            <Check className={`h-3.5 w-3.5 ${ev.status === "confirmed" ? "fill-emerald-500" : ""}`} />
+                          </button>
+                        )}
                         <button
                           onClick={() => openEdit(ev)}
                           className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"

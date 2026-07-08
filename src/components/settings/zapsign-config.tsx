@@ -86,6 +86,21 @@ export function ZapsignConfig() {
         <Button onClick={handleSave} disabled={saving}>
           {saving ? "Salvando..." : "Salvar"}
         </Button>
+
+        {enabled && (
+          <div className="rounded-lg border border-border bg-muted/50 p-3 space-y-1">
+            <p className="text-xs font-medium text-foreground">Webhook para notificações</p>
+            <p className="text-xs text-muted-foreground">
+              Configure esta URL no Zapsign &gt; Configurações &gt; Webhooks para receber
+              atualizações automáticas de status:
+            </p>
+            <code className="block break-all rounded bg-background px-2 py-1 text-xs text-foreground">
+              {typeof window !== "undefined"
+                ? `${window.location.origin}/api/signatures/webhook`
+                : ""}
+            </code>
+          </div>
+        )}
       </CardContent>
     </Card>
   )

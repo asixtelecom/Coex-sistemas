@@ -18,7 +18,7 @@ function formatDate(dateStr: string | undefined | null): string {
 
 function formatCurrency(value: number | undefined | null): string {
   if (value == null) return "-";
-  return "R$ " + Number(value).toFixed(2).replace(".", ",");
+  return Number(value).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
 const statusLabels: Record<string, string> = {
