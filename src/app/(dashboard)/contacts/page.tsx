@@ -55,7 +55,7 @@ import { useCan } from '@/hooks/use-can';
 import { useAuth } from '@/hooks/use-auth';
 import { GatedButton } from '@/components/ui/gated-button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { displayPhone } from '@/lib/whatsapp/phone-utils';
+import { displayPhone, maskPhone } from '@/lib/whatsapp/phone-utils';
 
 const PAGE_SIZE = 25;
 
@@ -67,7 +67,7 @@ export default function ContactsPage() {
   const supabase = createClient();
   const canEdit = useCan('send-messages');
   const canEditSettings = useCan('edit-settings');
-  const { user } = useAuth();
+  const { user, isAgent } = useAuth();
 
   const [contacts, setContacts] = useState<ContactWithTags[]>([]);
   const [loading, setLoading] = useState(true);
@@ -485,16 +485,18 @@ export default function ContactsPage() {
             >
               Limpar
             </Button>
-            <GatedButton
-              variant="destructive"
-              size="sm"
-              canAct={canEdit}
-              gateReason="delete contacts"
-              onClick={() => setBulkDeleteOpen(true)}
-            >
-              <Trash2 className="size-4" />
-              Excluir selecionados
-            </GatedButton>
+            {!isAgent && (
+              <GatedButton
+                variant="destructive"
+                size="sm"
+                canAct={canEdit}
+                gateReason="delete contacts"
+                onClick={() => setBulkDeleteOpen(true)}
+              >
+                <Trash2 className="size-4" />
+                Excluir selecionados
+              </GatedButton>
+            )}
           </div>
         </div>
       )}
@@ -591,7 +593,7 @@ export default function ContactsPage() {
                   </TableCell>
                   <TableCell className="text-muted-foreground font-mono text-xs">
                     <div className="flex items-center gap-1">
-                      {displayPhone(contact.phone)}
+                      {isAgent ? maskPhone(contact.phone) : displayPhone(contact.phone)}
                       {phoneCounts[contact.id] > 0 && (
                         <span className="inline-flex items-center gap-0.5 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
                           <Smartphone className="size-2.5" />
@@ -672,16 +674,18 @@ export default function ContactsPage() {
                           </DropdownMenuItem>
                         )}
                         <DropdownMenuSeparator className="bg-border" />
-                        <DropdownMenuItem
-                          variant="destructive"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            confirmDelete(contact);
-                          }}
-                        >
-                          <Trash2 className="size-4" />
-                          Excluir
-                        </DropdownMenuItem>
+                        {!isAgent && (
+                          <DropdownMenuItem
+                            variant="destructive"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              confirmDelete(contact);
+                            }}
+                          >
+                            <Trash2 className="size-4" />
+                            Excluir
+                          </DropdownMenuItem>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>

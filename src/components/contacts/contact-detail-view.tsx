@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { formatCurrency } from '@/lib/currency';
-import { displayPhone } from '@/lib/whatsapp/phone-utils';
+import { displayPhone, maskPhone } from '@/lib/whatsapp/phone-utils';
 import { toast } from 'sonner';
 import type { Contact, Tag, ContactTag, ContactNote, CustomField, ContactCustomValue, Deal, ContactPhone } from '@/types';
 import { ServiceBadges } from '@/components/ui/service-badges';
@@ -56,7 +56,7 @@ export function ContactDetailView({
   onUpdated,
 }: ContactDetailViewProps) {
   const supabase = createClient();
-  const { accountId, defaultCurrency } = useAuth();
+  const { accountId, defaultCurrency, isAgent } = useAuth();
 
   const [contact, setContact] = useState<Contact | null>(null);
   const [loading, setLoading] = useState(false);
@@ -456,7 +456,7 @@ export function ContactDetailView({
                       className="flex items-center gap-1 hover:text-primary transition-colors cursor-pointer"
                     >
                       <Phone className="size-3" />
-                      {displayPhone(contact.phone)}
+                      {isAgent ? maskPhone(contact.phone) : displayPhone(contact.phone)}
                       {copiedPhone === contact.phone ? (
                         <Check className="size-3 text-primary" />
                       ) : (

@@ -102,11 +102,14 @@ interface NavItem {
    * Purely informational — doesn't affect routing or access.
    */
   beta?: boolean;
+  /** Optional custom color for the icon/label (full Tailwind class, e.g. "text-orange-500"). */
+  iconClassName?: string;
 }
 
 const navItems: NavItem[] = [
   { href: "/dashboard", label: "Painel", icon: LayoutDashboard },
   { href: "/inbox", label: "Caixa de Entrada", icon: MessageSquare },
+  { href: "/pipelines", label: "Funil de Vendas", icon: GitBranch, iconClassName: "text-orange-500" },
   { href: "/pedidos", label: "Fechamento", icon: ClipboardList },
   { href: "/email", label: "E-mail", icon: Mail },
   { href: "/pagamentos", label: "Pagamentos", icon: CreditCard },
@@ -116,7 +119,6 @@ const navItems: NavItem[] = [
   { href: "/estoque", label: "Estoque", icon: Archive },
   { href: "/guarda-volume", label: "Storage", icon: Warehouse },
   { href: "/contacts", label: "Contatos", icon: Users },
-  { href: "/pipelines", label: "Funil de Vendas", icon: GitBranch },
   { href: "/broadcasts", label: "Transmissões", icon: Radio },
   { href: "/automations", label: "Automações", icon: Zap },
   { href: "/flows", label: "Fluxos", icon: Workflow, beta: true },
@@ -301,7 +303,7 @@ const [collapsed, setCollapsed] = useState(() => {
                     )}
                     title={collapsed ? item.label : undefined}
                   >
-                    <item.icon className={cn("h-4 w-4 shrink-0", item.href === "/pedidos" && mode === "light" && "text-orange-500")} />
+                    <item.icon className={cn("h-4 w-4 shrink-0", item.iconClassName)} />
                     <span className={cn("flex-1 transition-opacity duration-200", collapsed && "lg:hidden")}>{item.label}</span>
                     {item.beta && (
                       <span

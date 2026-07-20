@@ -4,11 +4,6 @@ import { useState, useRef, useEffect, type ReactNode } from "react";
 import { CornerUpLeft, Copy, SmilePlus, Forward, Smile } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import type { Message } from "@/types";
 
 const QUICK_EMOJIS = [
@@ -78,6 +73,7 @@ export function MessageActions({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [fullPickerOpen, setFullPickerOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState(0);
+  const quickPickerRef = useRef<HTMLDivElement>(null);
   const fullPickerRef = useRef<HTMLDivElement>(null);
 
   const isAgent =
@@ -88,12 +84,15 @@ export function MessageActions({
       if (fullPickerRef.current && !fullPickerRef.current.contains(e.target as Node)) {
         setFullPickerOpen(false);
       }
+      if (quickPickerRef.current && !quickPickerRef.current.contains(e.target as Node)) {
+        setPickerOpen(false);
+      }
     }
-    if (fullPickerOpen) {
+    if (fullPickerOpen || pickerOpen) {
       document.addEventListener("mousedown", handleClickOutside);
     }
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [fullPickerOpen]);
+  }, [fullPickerOpen, pickerOpen]);
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -152,43 +151,44 @@ export function MessageActions({
           isAgent ? "right-3" : "left-3",
         )}
       >
-        <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
-          <PopoverTrigger
-            className="flex h-5 w-5 items-center justify-center rounded-full text-popover-foreground hover:bg-muted hover:text-foreground"
-            aria-label="Reagir"
-          >
-            <SmilePlus className="h-3.5 w-3.5" />
-          </PopoverTrigger>
-          <PopoverContent
-            className="flex w-auto flex-row gap-1 p-1.5"
-            sideOffset={6}
-          >
-            {QUICK_EMOJIS.map((e) => (
-              <button
-                key={e}
-                type="button"
-                onClick={() => handlePickEmoji(e)}
-                className="flex h-8 w-8 items-center justify-center rounded-full text-lg leading-none transition-transform hover:scale-125 hover:bg-muted"
-                aria-label={`Reagir com ${e}`}
-              >
-                {e}
-              </button>
-            ))}
-            <div className="ml-1 border-l border-border pl-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setPickerOpen(false);
-                  setFullPickerOpen(true);
-                }}
-                className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
-                aria-label="Mais emojis"
-              >
-                <Smile className="h-4 w-4" />
-              </button>
+        {/* Quick Emoji Bar - Centralizado na tela */}
+        {pickerOpen && (
+          <>
+            <div
+              className="fixed inset-0 z-[99]"
+              onClick={() => setPickerOpen(false)}
+            />
+            <div
+              ref={quickPickerRef}
+              className="fixed left-1/2 top-1/2 z-[100] flex -translate-x-1/2 -translate-y-1/2 items-center gap-1 rounded-xl border border-border bg-popover px-2 py-1.5 shadow-xl backdrop-blur-sm"
+            >
+              {QUICK_EMOJIS.map((e) => (
+                <button
+                  key={e}
+                  type="button"
+                  onClick={() => handlePickEmoji(e)}
+                  className="flex h-9 w-9 items-center justify-center rounded-full text-xl leading-none transition-transform hover:scale-125 hover:bg-muted"
+                  aria-label={`Reagir com ${e}`}
+                >
+                  {e}
+                </button>
+              ))}
+              <div className="ml-1 border-l border-border pl-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPickerOpen(false);
+                    setFullPickerOpen(true);
+                  }}
+                  className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+                  aria-label="Mais emojis"
+                >
+                  <Smile className="h-4 w-4" />
+                </button>
+              </div>
             </div>
-          </PopoverContent>
-        </Popover>
+          </>
+        )}
 
         {/* Full Emoji Picker - Centralizado na tela */}
         {fullPickerOpen && (
@@ -240,6 +240,14 @@ export function MessageActions({
           </>
         )}
 
+        <button
+          type="button"
+          onClick={() => setPickerOpen(!pickerOpen)}
+          className="flex h-5 w-5 items-center justify-center rounded-full text-popover-foreground hover:bg-muted hover:text-foreground"
+          aria-label="Reagir"
+        >
+          <SmilePlus className="h-3.5 w-3.5" />
+        </button>
         <button
           type="button"
           onClick={handleReply}

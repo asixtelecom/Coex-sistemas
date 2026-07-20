@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
+import { maskPhone } from "@/lib/whatsapp/phone-utils";
 import { cn } from "@/lib/utils";
 import type { Contact, Deal, ContactNote, Tag } from "@/types";
 import { ServiceBadges } from "@/components/ui/service-badges";
@@ -29,7 +30,7 @@ interface ContactSidebarProps {
 }
 
 export function ContactSidebar({ contact }: ContactSidebarProps) {
-  const { accountId } = useAuth();
+  const { accountId, isAgent } = useAuth();
   const [copied, setCopied] = useState(false);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [notes, setNotes] = useState<ContactNote[]>([]);
@@ -249,7 +250,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
               className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
             >
               <Phone className="h-4 w-4 text-muted-foreground" />
-              <span className="flex-1 text-left">{contact.phone}</span>
+              <span className="flex-1 text-left">{isAgent ? maskPhone(contact.phone) : contact.phone}</span>
               {copied ? (
                 <Check className="h-3 w-3 text-primary" />
               ) : (

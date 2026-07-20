@@ -119,3 +119,24 @@ export function displayPhone(phone: string): string {
   if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`
   return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`
 }
+
+/**
+ * Mask phone number showing only first 2 and last 4 digits.
+ * e.g. "5511947196405" → "(11) 9••••-9640"
+ * Used to hide full phone from agents for privacy.
+ */
+export function maskPhone(phone: string): string {
+  if (!phone) return ''
+  let digits = phone.replace(/\D/g, '')
+  if (digits.length >= 12 && digits.startsWith('55')) {
+    digits = digits.slice(2)
+  }
+  digits = digits.slice(0, 11)
+  if (digits.length <= 6) return digits
+  const areaCode = digits.slice(0, 2)
+  const last4 = digits.slice(-4)
+  const maskedLen = digits.length - 2 - 4
+  const masked = '•'.repeat(Math.max(maskedLen, 1))
+  if (digits.length <= 10) return `(${areaCode}) ${masked}-${last4}`
+  return `(${areaCode}) ${digits[2]}${masked}-${last4}`
+}

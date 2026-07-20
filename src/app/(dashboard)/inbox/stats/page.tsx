@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { useAuth } from '@/hooks/use-auth'
 import { format, subDays, startOfWeek, parseISO, startOfMonth } from 'date-fns'
 import { Card } from '@/components/ui/card'
 import { ArrowLeft, AlertCircle, EyeOff, X, ChevronDown } from 'lucide-react'
@@ -33,6 +34,7 @@ const MONTHS: Record<string, string> = {
 }
 
 export default function InboxStatsPage() {
+  const { user, isAgent } = useAuth()
   const [period, setPeriod] = useState<Period>('month')
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState<StatsRow[]>([])
@@ -77,12 +79,34 @@ export default function InboxStatsPage() {
       }
       const startDate = subDays(now, periodDays[period])
 
-      const { data: messagesData, error: err } = await supabase
+      // For agents, only get their assigned conversations
+      let allowedConvIds: string[] | null = null
+      if (isAgent && user?.id) {
+        const { data: myConvs } = await supabase
+          .from('conversations')
+          .select('id')
+          .or(`assigned_agent_id.eq.${user.id},user_id.eq.${user.id}`)
+        allowedConvIds = (myConvs || []).map(c => c.id)
+        if (allowedConvIds.length === 0) {
+          setRawMessages([])
+          setRawConvChannelMap(new Map())
+          setLoading(false)
+          return
+        }
+      }
+
+      let query = supabase
         .from('messages')
         .select('sender_type, recipient_read_at, created_at, conversation_id')
         .gte('created_at', startDate.toISOString())
         .eq('sender_type', 'agent')
         .order('created_at', { ascending: true })
+
+      if (allowedConvIds) {
+        query = query.in('conversation_id', allowedConvIds)
+      }
+
+      const { data: messagesData, error: err } = await query
 
       if (err) {
         setError(err.message)
@@ -135,7 +159,7 @@ export default function InboxStatsPage() {
       setError(e?.message || 'Erro inesperado')
     }
     setLoading(false)
-  }, [period, supabase])
+  }, [period, supabase, isAgent, user?.id])
 
   useEffect(() => {
     fetchStats()
@@ -246,13 +270,33 @@ export default function InboxStatsPage() {
     if (row.unread === 0) return
     setDrillDown({ label: row.label, contacts: [], loading: true })
     try {
-      const { data, error: err } = await supabase
+      // For agents, only get their assigned conversations
+      let allowedConvIds: string[] | null = null
+      if (isAgent && user?.id) {
+        const { data: myConvs } = await supabase
+          .from('conversations')
+          .select('id')
+          .or(`assigned_agent_id.eq.${user.id},user_id.eq.${user.id}`)
+        allowedConvIds = (myConvs || []).map(c => c.id)
+        if (allowedConvIds.length === 0) {
+          setDrillDown({ label: row.label, contacts: [], loading: false })
+          return
+        }
+      }
+
+      let query = supabase
         .from('messages')
         .select('conversation_id')
         .eq('sender_type', 'agent')
         .is('recipient_read_at', null)
         .gte('created_at', row.periodStart)
         .lt('created_at', row.periodEnd)
+
+      if (allowedConvIds) {
+        query = query.in('conversation_id', allowedConvIds)
+      }
+
+      const { data, error: err } = await query
 
       if (err || !data || data.length === 0) {
         setDrillDown({ label: row.label, contacts: [], loading: false })
