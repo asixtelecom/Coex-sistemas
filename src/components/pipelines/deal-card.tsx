@@ -2,21 +2,31 @@
 
 import { useState } from "react";
 import type { Deal, PipelineStage } from "@/types";
-import { Calendar, Check, X, MoreVertical, User, Phone, DollarSign, Tag, CalendarDays, Clock, BarChart3 } from "lucide-react";
+import { Calendar, Check, X, MoreVertical, User, Phone, DollarSign, Tag, CalendarDays, Clock, BarChart3, ClipboardCheck } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import { ServiceBadges } from "@/components/ui/service-badges";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface DealCardProps {
   deal: Deal;
   stage: PipelineStage | null;
   onEdit: (deal: Deal) => void;
   isOverlay?: boolean;
+  stages?: PipelineStage[];
+  onMoveStage?: (dealId: string, newStageId: string) => void;
 }
 
 function formatDate(dateStr: string) {
@@ -43,14 +53,13 @@ function initials(name?: string, fallback?: string) {
   return source.charAt(0).toUpperCase();
 }
 
-export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
-  const [menuOpen, setMenuOpen] = useState(false);
+export function DealCard({ deal, stage, onEdit, isOverlay, stages, onMoveStage }: DealCardProps) {
+  const [detailOpen, setDetailOpen] = useState(false);
   const contactLabel = deal.contact?.name || deal.contact?.phone || "Sem contato";
   const assigneeLabel = deal.assignee?.full_name || null;
 
   const handleCardClick = (e: React.MouseEvent) => {
     if (isOverlay) return;
-    if (menuOpen) return;
     e.stopPropagation();
     onEdit(deal);
   };
@@ -74,9 +83,15 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
 
         <div className="flex items-start justify-between gap-2">
           <h4 className="flex-1 text-sm font-semibold leading-snug text-foreground break-words">
-            {deal.title}{deal.property_type ? <span className="font-bold"> Box {deal.property_type}</span> : ""}
+            <ServiceBadges title={deal.title} maxDisplay={2} />
+            {deal.property_type && <span className="font-bold text-xs">&nbsp;Box&nbsp;{deal.property_type}</span>}
           </h4>
           <div className="flex items-center gap-0.5 shrink-0">
+            {deal.vistoria_id && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/15 px-2 py-0.5 text-[10px] font-semibold text-blue-400" title="Tem vistoria">
+                <ClipboardCheck className="h-3 w-3" />
+              </span>
+            )}
             {deal.status === "won" && (
               <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">
                 <Check className="h-3 w-3" />
@@ -89,17 +104,41 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
                 Lost
               </span>
             )}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setMenuOpen(true);
-              }}
-              className="ml-1 flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:bg-muted hover:text-foreground"
-              title="Detalhes"
-            >
-              <MoreVertical className="h-3.5 w-3.5" />
-            </button>
+            {!isOverlay && (
+              <DropdownMenu>
+                <DropdownMenuTrigger className="ml-1 flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:bg-muted hover:text-foreground">
+                  <MoreVertical className="h-3.5 w-3.5" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-[180px]">
+                  <DropdownMenuItem onClick={() => setDetailOpen(true)}>
+                    <span className="text-sm">Visualizar</span>
+                  </DropdownMenuItem>
+                  {stages && stages.length > 0 && (
+                    <>
+                      <DropdownMenuSeparator />
+                      {stages.map((s) => (
+                        <DropdownMenuItem
+                          key={s.id}
+                          disabled={s.id === deal.stage_id}
+                          onClick={() => onMoveStage?.(deal.id, s.id)}
+                        >
+                          <div className="flex items-center gap-2 text-sm">
+                            <span
+                              className="h-2 w-2 rounded-full shrink-0"
+                              style={{ backgroundColor: s.color }}
+                            />
+                            {s.name}
+                            {s.id === deal.stage_id && (
+                              <span className="text-xs text-muted-foreground ml-auto">atual</span>
+                            )}
+                          </div>
+                        </DropdownMenuItem>
+                      ))}
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </div>
         </div>
 
@@ -137,10 +176,12 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
       </button>
 
       {/* Details dialog */}
-      <Dialog open={menuOpen} onOpenChange={setMenuOpen}>
+      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle className="text-base">{deal.title}</DialogTitle>
+            <DialogTitle className="text-base">
+              <ServiceBadges title={deal.title} maxDisplay={5} />
+            </DialogTitle>
           </DialogHeader>
 
           <div className="space-y-3">
@@ -202,6 +243,12 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
                       {deal.status === "won" ? "Ganho" : deal.status === "lost" ? "Perdido" : "Em andamento"}
                     </span>
                   </td>
+                </tr>
+                <tr className="border-b border-border/50">
+                  <td className="flex items-center gap-2 py-2.5 text-muted-foreground">
+                    <ClipboardCheck className="h-3.5 w-3.5" /> Vistoria
+                  </td>
+                  <td className="py-2.5 text-right font-medium">{deal.vistoria_id ? "Sim" : "Não"}</td>
                 </tr>
                 <tr className="border-b border-border/50">
                   <td className="flex items-center gap-2 py-2.5 text-muted-foreground">

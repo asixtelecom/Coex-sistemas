@@ -150,13 +150,12 @@ export async function POST() {
       )
     }
 
-    const { data: config, error: configError } = await supabase
+    const { data: configs, error: configError } = await supabase
       .from('whatsapp_config')
       .select('*')
       .eq('account_id', accountId)
-      .single()
 
-    if (configError || !config) {
+    if (configError || !configs || configs.length === 0) {
       return NextResponse.json(
         {
           error:
@@ -166,55 +165,69 @@ export async function POST() {
       )
     }
 
-    if (!config.waba_id) {
-      return NextResponse.json(
-        {
-          error:
-            'WABA (WhatsApp Business Account) ID missing. Re-connect your account in Settings.',
-        },
-        { status: 400 },
-      )
-    }
-
-    const accessToken = decrypt(config.access_token)
-
-    const metaTemplates: MetaTemplate[] = []
-    let nextUrl:
-      | string
-      | null = `${META_API_BASE}/${config.waba_id}/message_templates?limit=100&fields=id,name,language,status,category,components,quality_score`
-    const PAGE_CAP = 20
-    let pageCount = 0
-
-    while (nextUrl && pageCount < PAGE_CAP) {
-      pageCount++
-      const metaRes: Response = await fetch(nextUrl, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      })
-
-      if (!metaRes.ok) {
-        let metaErr = `Meta API error: ${metaRes.status}`
-        try {
-          const body = await metaRes.json()
-          if (body?.error?.message) metaErr = body.error.message
-        } catch {
-          // response wasn't JSON — keep the fallback
-        }
-        return NextResponse.json({ error: metaErr }, { status: 502 })
-      }
-
-      const metaBody: {
-        data?: MetaTemplate[]
-        paging?: { next?: string }
-      } = await metaRes.json()
-      if (metaBody.data) metaTemplates.push(...metaBody.data)
-      nextUrl = metaBody.paging?.next ?? null
-    }
-
     let inserted = 0
     let updated = 0
     const errors: { name: string; language: string; message: string }[] = []
+    let totalTemplatesCount = 0
+    let isTruncated = false
 
-    for (const t of metaTemplates) {
+    for (const config of configs) {
+      if (!config.waba_id || !config.access_token) {
+        continue
+      }
+
+      let accessToken: string
+      try {
+        accessToken = decrypt(config.access_token)
+      } catch (err) {
+        console.error('Failed to decrypt access token for config:', config.id, err)
+        continue
+      }
+
+      const metaTemplates: MetaTemplate[] = []
+      let nextUrl:
+        | string
+        | null = `${META_API_BASE}/${config.waba_id}/message_templates?limit=100&fields=id,name,language,status,category,components,quality_score`
+      const PAGE_CAP = 20
+      let pageCount = 0
+
+      while (nextUrl && pageCount < PAGE_CAP) {
+        pageCount++
+        const metaRes: Response = await fetch(nextUrl, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        })
+
+        if (!metaRes.ok) {
+          let metaErr = `Meta API error: ${metaRes.status}`
+          try {
+            const body = await metaRes.json()
+            if (body?.error?.message) metaErr = body.error.message
+          } catch {
+            // response wasn't JSON — keep the fallback
+          }
+          errors.push({
+            name: `WABA ID ${config.waba_id}`,
+            language: 'ALL',
+            message: metaErr,
+          })
+          break
+        }
+
+        const metaBody: {
+          data?: MetaTemplate[]
+          paging?: { next?: string }
+        } = await metaRes.json()
+        if (metaBody.data) metaTemplates.push(...metaBody.data)
+        nextUrl = metaBody.paging?.next ?? null
+      }
+
+      if (pageCount >= PAGE_CAP && nextUrl !== null) {
+        isTruncated = True
+      }
+
+      totalTemplatesCount += metaTemplates.length
+
+      for (const t of metaTemplates) {
       const body = (t.components ?? []).find((c) => c.type === 'BODY')
       const header = (t.components ?? []).find((c) => c.type === 'HEADER')
       const footer = (t.components ?? []).find((c) => c.type === 'FOOTER')
@@ -301,13 +314,15 @@ export async function POST() {
       }
     }
 
+    } // end of config loop
+
     return NextResponse.json({
       success: errors.length === 0,
-      total: metaTemplates.length,
+      total: totalTemplatesCount,
       inserted,
       updated,
       errors,
-      truncated: pageCount >= PAGE_CAP && nextUrl !== null,
+      truncated: isTruncated,
     })
   } catch (error) {
     console.error('Error syncing WhatsApp templates:', error)

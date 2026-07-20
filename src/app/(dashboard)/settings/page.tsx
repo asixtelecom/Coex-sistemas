@@ -25,6 +25,10 @@ import { MembersTab } from '@/components/settings/members-tab';
 import { PixConfig } from "@/components/settings/pix-config"
 import { ZapsignConfig } from "@/components/settings/zapsign-config"
 import { CubagemSettings } from "@/components/settings/cubagem-settings"
+import { BackupPanel } from "@/components/settings/backup-panel"
+import { TelefoniaConfig } from "@/components/settings/telefonia-config"
+import { TiktokConfig } from "@/components/settings/tiktok-config"
+import { YoutubeConfig } from "@/components/settings/youtube-config"
 import {
   AGENT_SECTIONS,
   resolveSection,
@@ -80,13 +84,17 @@ function SettingsPageInner() {
         webchat: <WebchatConfig />,
         linkedin: <LinkedInConfig />,
         email: <EmailConfig />,
+        templates: <TemplateManager />,
         pix: <PixConfig />,
         zapsign: <ZapsignConfig />,
-        templates: <TemplateManager />,
         fields: <FieldsAndTagsPanel />,
         deals: <DealsSettings />,
         members: <MembersTab />,
         cubagem: <CubagemSettings />,
+        backup: <BackupPanel />,
+        telefonia: <TelefoniaConfig />,
+        tiktok: <TiktokConfig />,
+        youtube: <YoutubeConfig />,
       }
     : {};
 

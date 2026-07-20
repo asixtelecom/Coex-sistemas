@@ -1,0 +1,10 @@
+[12/07/2026 13:13:36] Del mandou oi para Cristiane
+
+[12/07/2026 13:14:09] Cristiane mandou oi para Del
+
+[12/07/2026 13:14:44] Del mandou teste para Cristiane
+
+[12/07/2026 13:14:51] Cristiane mandou n para Del
+
+[12/07/2026 13:39:10] Del mandou teste para Cristiane
+

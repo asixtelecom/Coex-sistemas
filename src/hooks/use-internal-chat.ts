@@ -34,6 +34,7 @@ export function useInternalChat(accountId: string | null, currentUserId: string 
   const [loading, setLoading] = useState(true);
   const presenceIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const activeConvIdRef = useRef<string | null>(null);
+  const employeesRef = useRef<EmployeeWithPresence[]>([]);
 
   useEffect(() => {
     activeConvIdRef.current = activeConversation?.id ?? null;
@@ -46,7 +47,7 @@ export function useInternalChat(accountId: string | null, currentUserId: string 
       .from("profiles")
       .select("user_id, full_name, email, avatar_url, role, account_role")
       .eq("account_id", accountId)
-      .in("account_role", ["admin", "agent", "owner"])
+      .in("account_role", ["admin", "agent", "vistoria", "owner"])
       .returns<(Profile & { account_role: string })[]>();
 
     if (!members) return;
@@ -164,6 +165,10 @@ export function useInternalChat(accountId: string | null, currentUserId: string 
 
     setConversations(convList);
   }, [currentUserId, employees]);
+
+  useEffect(() => {
+    employeesRef.current = employees;
+  }, [employees]);
 
   useEffect(() => {
     if (conversations.length > 0 && employees.length > 0) {
@@ -442,6 +447,7 @@ export function useInternalChat(accountId: string | null, currentUserId: string 
     updatePresence("online");
     presenceIntervalRef.current = setInterval(() => {
       updatePresence("online");
+      void createClient().rpc("expire_stale_presence").then(() => {}).catch(() => {});
     }, 30000);
 
     const onVisibility = () => {
@@ -529,7 +535,7 @@ export function useInternalChat(accountId: string | null, currentUserId: string 
         async (payload) => {
           const msg = payload.new as InternalMessage;
           if (msg.sender_id !== currentUserId) {
-            const senderName = employees.find((e) => e.user_id === msg.sender_id)?.full_name ?? "Alguém"
+            const senderName = employeesRef.current.find((e) => e.user_id === msg.sender_id)?.full_name ?? "Alguém"
             playNotificationSound()
             showDesktopNotification(
               "Chat Interno - " + senderName,
@@ -549,8 +555,8 @@ export function useInternalChat(accountId: string | null, currentUserId: string 
             setMessages((prev) => [...prev, { ...msg, sender: sender as Profile }]);
             markAsRead(msg.conversation_id);
           }
-          setConversations((prev) =>
-            prev.map((c) => {
+          setConversations((prev) => {
+            const updated = prev.map((c) => {
               if (c.id === msg.conversation_id) {
                 return {
                   ...c,
@@ -560,8 +566,13 @@ export function useInternalChat(accountId: string | null, currentUserId: string 
                 };
               }
               return c;
-            })
-          );
+            });
+            return updated.sort((a, b) => {
+              const aTime = a.last_message?.created_at ?? a.updated_at ?? a.created_at;
+              const bTime = b.last_message?.created_at ?? b.updated_at ?? b.created_at;
+              return new Date(bTime).getTime() - new Date(aTime).getTime();
+            });
+          });
         }
       )
       .on(

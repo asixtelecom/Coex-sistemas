@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
-import { CornerUpLeft, Copy, SmilePlus } from "lucide-react";
+import { useState, useRef, useEffect, type ReactNode } from "react";
+import { CornerUpLeft, Copy, SmilePlus, Forward, Smile } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -11,36 +11,89 @@ import {
 } from "@/components/ui/popover";
 import type { Message } from "@/types";
 
-// WhatsApp's own quick-reaction bar starts with these six. Picking the same
-// set keeps the affordance familiar without pulling in a 300KB emoji library.
-const QUICK_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+const QUICK_EMOJIS = [
+  "👍", "👎", "❤️", "🔥", "😂", "😮", "😢", "🙏",
+  "👏", "🤝", "💪", "✅", "❌", "⭐", "🎉", "🤔",
+];
+
+const EMOJI_CATEGORIES = [
+  {
+    name: "Frequentes",
+    emojis: ["👍", "👎", "❤️", "🔥", "😂", "😮", "😢", "🙏", "👏", "🤝", "💪", "✅", "❌", "⭐", "🎉", "🤔", "😊", "😍", "🥰", "😘", "😎", "🤗", "😅", "🤣"],
+  },
+  {
+    name: "Sorrisos",
+    emojis: ["😀", "😃", "😄", "😁", "😆", "😅", "🤣", "😂", "🙂", "🙃", "😉", "😊", "😇", "🥰", "😍", "🤩", "😘", "😗", "😚", "😙", "🥲", "😋", "😛", "😜", "🤪", "😝", "🤑", "🤗", "🤭", "🤫", "🤔", "🫡", "🤐", "🤨", "😐", "😑", "😶", "🫥", "😏", "😒", "🙄", "😬", "🤥"],
+  },
+  {
+    name: "Gestos",
+    emojis: ["👋", "🤚", "🖐️", "✋", "🖖", "🫱", "🫲", "🫳", "🫴", "👌", "🤌", "🤏", "✌️", "🤞", "🫰", "🤟", "🤘", "🤙", "👈", "👉", "👆", "🖕", "👇", "☝️", "🫵", "👍", "👎", "✊", "👊", "🤛", "🤜", "👏", "🙌", "🫶", "👐", "🤲", "🤝", "🙏"],
+  },
+  {
+    name: "Corações",
+    emojis: ["❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔", "❤️‍🔥", "❤️‍🩹", "❣️", "💕", "💞", "💓", "💗", "💖", "💘", "💝", "💟"],
+  },
+  {
+    name: "Animais",
+    emojis: ["🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐻‍❄️", "🐨", "🐯", "🦁", "🐮", "🐷", "🐸", "🐵", "🙈", "🙉", "🙊", "🐒", "🐔", "🐧", "🐦", "🐤", "🐣", "🐥", "🦆", "🦅", "🦉", "🦇", "🐺", "🐗", "🐴", "🦄", "🐝", "🪱", "🐛", "🦋", "🐌", "🐞"],
+  },
+  {
+    name: "Comida",
+    emojis: ["🍎", "🍐", "🍊", "🍋", "🍌", "🍉", "🍇", "🍓", "🫐", "🍈", "🍒", "🍑", "🥭", "🍍", "🥥", "🥝", "🍅", "🥑", "🌮", "🌯", "🥙", "🧆", "🥚", "🍳", "🥘", "🍲", "🫕", "🥣", "🥗", "🍿", "🧈", "🧂", "🍕", "🍔", "🍟", "🌭", "🥪", "🌮", "🌯"],
+  },
+  {
+    name: "Atividades",
+    emojis: ["⚽", "🏀", "🏈", "⚾", "🥎", "🎾", "🏐", "🏉", "🥏", "🎱", "🪀", "🏓", "🏸", "🏒", "🥅", "⛳", "🪁", "🏹", "🎣", "🤿", "🥊", "🥋", "🎽", "🛹", "🛼", "🛷", "⛸️", "🥌", "🎿", "🎯", "🎮", "🎰", "🧩", "🎭", "🎨", "🧵", "🧶", "🎼", "🎵", "🎶"],
+  },
+  {
+    name: "Objetos",
+    emojis: ["⌚", "📱", "📲", "💻", "⌨️", "🖥️", "🖨️", "🖱️", "🖲️", "🕹️", "🗜️", "💽", "💾", "💿", "📀", "📼", "📷", "📸", "📹", "🎥", "📽️", "🎞️", "📞", "☎️", "📟", "📠", "📺", "📻", "🎙️", "🎚️", "🎛️", "🧭", "⏱️", "⏲️", "⏰", "🕰️", "⌛", "⏳", "📡", "🔋"],
+  },
+  {
+    name: "Símbolos",
+    emojis: ["❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔", "❣️", "💕", "💞", "💓", "💗", "💖", "💘", "💝", "💟", "☮️", "✝️", "☪️", "🕉️", "☸️", "✡️", "🔯", "🕎", "☯️", "☦️", "🛐", "⛎", "♈", "♉", "♊", "♋", "♌", "♍", "♎", "♏", "♐"],
+  },
+  {
+    name: "Bandeiras",
+    emojis: ["🏁", "🚩", "🎌", "🏴", "🏳️", "🏳️‍🌈", "🏳️‍⚧️", "🏴‍☠️", "🇺🇸", "🇧🇷", "🇬🇧", "🇫🇷", "🇩🇪", "🇮🇹", "🇪🇸", "🇯🇵", "🇰🇷", "🇨🇳", "🇮🇳", "🇷🇺", "🇨🇦", "🇦🇺", "🇲🇽", "🇦🇷", "🇨🇴", "🇨🇱", "🇵🇪", "🇪🇨", "🇻🇪", "🇵🇹"],
+  },
+];
 
 interface MessageActionsProps {
   message: Message;
   onReply: () => void;
   onReact: (emoji: string) => void;
+  onForward?: () => void;
   children: ReactNode;
 }
 
-/**
- * Hover/long-press toolbar wrapper around a `<MessageBubble>`. The bubble
- * itself stays a pure presenter — this component owns the action surface so
- * the bubble's render path is unaffected when the toolbar isn't visible.
- */
 export function MessageActions({
   message,
   onReply,
   onReact,
+  onForward,
   children,
 }: MessageActionsProps) {
-  // Touch devices have no hover. Long-press fires `contextmenu`; we capture
-  // it, suppress the native menu, and pin the toolbar open until the user
-  // interacts elsewhere.
   const [touchOpen, setTouchOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [fullPickerOpen, setFullPickerOpen] = useState(false);
+  const [activeCategory, setActiveCategory] = useState(0);
+  const fullPickerRef = useRef<HTMLDivElement>(null);
 
   const isAgent =
     message.sender_type === "agent" || message.sender_type === "bot";
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (fullPickerRef.current && !fullPickerRef.current.contains(e.target as Node)) {
+        setFullPickerOpen(false);
+      }
+    }
+    if (fullPickerOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [fullPickerOpen]);
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -65,6 +118,7 @@ export function MessageActions({
   const handlePickEmoji = (emoji: string) => {
     onReact(emoji);
     setPickerOpen(false);
+    setFullPickerOpen(false);
     setTouchOpen(false);
   };
 
@@ -73,9 +127,11 @@ export function MessageActions({
     setTouchOpen(false);
   };
 
-  // Row alignment lives here (not in MessageBubble) so the `group/actions`
-  // hover region matches the bubble's content width — hovering empty space
-  // in the row no longer reveals the toolbar.
+  const handleForward = () => {
+    onForward?.();
+    setTouchOpen(false);
+  };
+
   return (
     <div
       className={cn(
@@ -85,15 +141,10 @@ export function MessageActions({
       onContextMenu={handleContextMenu}
       onBlur={() => setTouchOpen(false)}
     >
-      {/* `min-w-0` lets this flex child actually respect the 75% cap.
-       *  Default `min-width: auto` lets content (a long quote preview,
-       *  an unbroken URL) push past the cap and shove the row past
-       *  100%, which used to bleed across into the contact-sidebar
-       *  area. See issue #165. */}
       <div className="group/actions relative min-w-0 max-w-[75%]">
         {children}
       <div
-        data-touch-open={touchOpen || pickerOpen ? "true" : undefined}
+        data-touch-open={touchOpen || pickerOpen || fullPickerOpen ? "true" : undefined}
         className={cn(
           "absolute -top-3 z-10 flex h-7 items-center gap-0.5 rounded-full border border-border bg-popover/95 px-1 shadow-md backdrop-blur-sm transition-opacity",
           "opacity-0 group-hover/actions:opacity-100 group-focus-within/actions:opacity-100",
@@ -123,8 +174,72 @@ export function MessageActions({
                 {e}
               </button>
             ))}
+            <div className="ml-1 border-l border-border pl-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setPickerOpen(false);
+                  setFullPickerOpen(true);
+                }}
+                className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+                aria-label="Mais emojis"
+              >
+                <Smile className="h-4 w-4" />
+              </button>
+            </div>
           </PopoverContent>
         </Popover>
+
+        {/* Full Emoji Picker - Centralizado na tela */}
+        {fullPickerOpen && (
+          <>
+            <div
+              className="fixed inset-0 z-[99]"
+              onClick={() => setFullPickerOpen(false)}
+            />
+            <div
+              ref={fullPickerRef}
+              className="fixed left-1/2 top-1/2 z-[100] w-[340px] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-popover shadow-xl"
+            >
+            {/* Category Tabs */}
+            <div className="flex gap-1 overflow-x-auto border-b border-border p-2 scrollbar-none">
+              {EMOJI_CATEGORIES.map((cat, idx) => (
+                <button
+                  key={cat.name}
+                  type="button"
+                  onClick={() => setActiveCategory(idx)}
+                  className={cn(
+                    "shrink-0 rounded-md px-2 py-1 text-xs font-medium transition-colors",
+                    activeCategory === idx
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  )}
+                >
+                  {cat.name}
+                </button>
+              ))}
+            </div>
+
+            {/* Emoji Grid */}
+            <div className="h-[280px] overflow-y-auto p-2">
+              <div className="grid grid-cols-8 gap-0.5">
+                {EMOJI_CATEGORIES[activeCategory].emojis.map((emoji) => (
+                  <button
+                    key={emoji}
+                    type="button"
+                    onClick={() => handlePickEmoji(emoji)}
+                    className="flex h-9 w-9 items-center justify-center rounded-lg text-xl leading-none transition-transform hover:scale-125 hover:bg-muted"
+                    aria-label={`Reagir com ${emoji}`}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          </>
+        )}
+
         <button
           type="button"
           onClick={handleReply}
@@ -141,6 +256,16 @@ export function MessageActions({
         >
           <Copy className="h-3.5 w-3.5" />
         </button>
+        {onForward && (
+          <button
+            type="button"
+            onClick={handleForward}
+            className="flex h-5 w-5 items-center justify-center rounded-full text-popover-foreground hover:bg-muted hover:text-foreground"
+            aria-label="Encaminhar"
+          >
+            <Forward className="h-3.5 w-3.5" />
+          </button>
+        )}
       </div>
       </div>
     </div>

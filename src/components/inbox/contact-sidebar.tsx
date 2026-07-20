@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import type { Contact, Deal, ContactNote, Tag } from "@/types";
+import { ServiceBadges } from "@/components/ui/service-badges";
 import {
   Phone,
   Mail,
@@ -17,6 +18,7 @@ import {
   StickyNote,
   Plus,
   Trash2,
+  Package,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -317,7 +319,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
           <div>
             <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
               <DollarSign className="h-3 w-3" />
-              Negócios Ativos
+              Serviços contratados
             </div>
             <div className="mt-2 space-y-2">
               {deals.length === 0 ? (
@@ -328,13 +330,16 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
                     key={deal.id}
                     className="rounded-lg bg-muted px-3 py-2"
                   >
-                    <p className="text-sm font-medium text-foreground">
-                      {deal.title}
-                    </p>
+                    <ServiceBadges title={deal.title} maxDisplay={2} />
+                    {deal.property_type && (
+                      <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                        <Package className="h-3 w-3" />
+                        <span>Box: {deal.property_type}</span>
+                      </div>
+                    )}
                     <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
                       <span>
-                        {deal.currency ?? "$"}
-                        {deal.value.toLocaleString()}
+                        {deal.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                       </span>
                       {deal.stage && (
                         <span

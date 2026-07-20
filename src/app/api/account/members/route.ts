@@ -57,7 +57,7 @@ export async function POST(request: Request) {
     const fullName = typeof body.full_name === "string" ? body.full_name.trim() : "";
     const role = body.role;
     if (!isAccountRole(role) || role === "owner")
-      return NextResponse.json({ error: "Role must be one of admin, agent, viewer" }, { status: 400 });
+      return NextResponse.json({ error: "Role must be one of admin, agent, vistoria, viewer" }, { status: 400 });
 
     const internalAdmin = supabaseInternalAdmin();
     const { data: newUser, error: createError } = await internalAdmin.auth.admin.createUser({

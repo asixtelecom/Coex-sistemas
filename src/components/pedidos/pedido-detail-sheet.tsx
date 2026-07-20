@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import { ServiceBadges } from "@/components/ui/service-badges";
 import { MapPin, Calendar, DollarSign, FileText, User, Eye, Printer, Pencil } from "lucide-react";
 
 interface PedidoDetailSheetProps {
@@ -111,7 +112,7 @@ export function PedidoDetailSheet({ open, onOpenChange, deal, onEdit, onPrintPDF
                   <FileText className="h-3 w-3" />
                   Serviço
                 </div>
-                <p className="text-sm font-medium text-foreground">{deal.title}</p>
+                <ServiceBadges title={deal.title} maxDisplay={5} />
               </div>
               <div className="rounded-lg border border-border bg-muted/30 p-3">
                 <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">

@@ -71,7 +71,7 @@ function googleCalendarUrl(ev: CalendarEvent) {
 }
 
 export default function AgendaPage() {
-  const { accountId, user, canEditSettings } = useAuth()
+  const { accountId, user, canEditSettings, accountRole } = useAuth()
   const supabase = createClient()
   const [events, setEvents] = useState<CalendarEvent[]>([])
   const [loading, setLoading] = useState(true)
@@ -300,10 +300,12 @@ export default function AgendaPage() {
           <h1 className="text-2xl font-bold">Agenda</h1>
           <p className="mt-1 text-sm text-muted-foreground">Eventos e compromissos</p>
         </div>
-        <Button className="gap-2" onClick={() => openNewEvent()}>
-          <Plus className="h-4 w-4" />
-          Novo Evento
-        </Button>
+        {accountRole !== 'viewer' && (
+          <Button className="gap-2" onClick={() => openNewEvent()}>
+            <Plus className="h-4 w-4" />
+            Novo Evento
+          </Button>
+        )}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
@@ -371,9 +373,11 @@ export default function AgendaPage() {
                 <p className="text-xs text-muted-foreground">
                   {filteredEvents.length} evento{filteredEvents.length !== 1 ? "s" : ""}
                 </p>
-                <Button size="sm" variant="outline" className="mt-2 w-full gap-1" onClick={() => openNewEvent(selectedDate)}>
-                  <Plus className="h-3 w-3" /> Novo nesta data
-                </Button>
+                {accountRole !== 'viewer' && (
+                  <Button size="sm" variant="outline" className="mt-2 w-full gap-1" onClick={() => openNewEvent(selectedDate)}>
+                    <Plus className="h-3 w-3" /> Novo nesta data
+                  </Button>
+                )}
               </CardContent>
             </Card>
           )}
@@ -414,7 +418,7 @@ export default function AgendaPage() {
                         <Badge variant={statusMap[ev.status]?.variant || "outline"}>
                           {statusMap[ev.status]?.label || ev.status}
                         </Badge>
-                        {(ev.status === "scheduled" || ev.status === "confirmed") && (
+                        {(ev.status === "scheduled" || ev.status === "confirmed") && accountRole !== 'viewer' && accountRole !== 'vistoria' && (
                           <button
                             onClick={(e) => { e.stopPropagation(); handleConfirmToggle(ev) }}
                             className={`p-1.5 rounded-md transition-colors ${
@@ -427,20 +431,24 @@ export default function AgendaPage() {
                             <Check className={`h-3.5 w-3.5 ${ev.status === "confirmed" ? "fill-emerald-500" : ""}`} />
                           </button>
                         )}
-                        <button
-                          onClick={() => openEdit(ev)}
-                          className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                          title="Editar"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(ev)}
-                          className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-destructive transition-colors"
-                          title="Excluir"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                        {accountRole !== 'viewer' && accountRole !== 'vistoria' && (
+                          <button
+                            onClick={() => openEdit(ev)}
+                            className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                            title="Editar"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                        {accountRole !== 'viewer' && accountRole !== 'vistoria' && (
+                          <button
+                            onClick={() => handleDelete(ev)}
+                            className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-destructive transition-colors"
+                            title="Excluir"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                       </div>
                     </div>
                     <div className="text-xs text-muted-foreground space-y-0.5 ml-5">

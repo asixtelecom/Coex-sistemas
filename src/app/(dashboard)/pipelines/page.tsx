@@ -37,10 +37,10 @@ import { GatedButton } from "@/components/ui/gated-button";
 
 // Spec-defined seed — name and color per the product spec.
 const SPEC_DEFAULT_STAGES = [
-  { name: "Novo Lead", color: "#3b82f6", position: 0 },
+  { name: "Novo", color: "#3b82f6", position: 0 },
   { name: "Qualificado", color: "#eab308", position: 1 },
-  { name: "Proposta Enviada", color: "#f97316", position: 2 },
-  { name: "Negociação", color: "#8b5cf6", position: 3 },
+  { name: "Orçamento enviado", color: "#f97316", position: 2 },
+  { name: "Negociando", color: "#8b5cf6", position: 3 },
   { name: "Ganho", color: "#22c55e", position: 4 },
 ];
 
@@ -450,7 +450,7 @@ export default function PipelinesPage() {
               }}
             />
             <p className="mt-2 text-xs text-muted-foreground">
-              Estágios padrão (Novo Lead → Ganho) serão criados automaticamente.
+              Estágios padrão (Novo → Ganho) serão criados automaticamente.
             </p>
           </div>
           <DialogFooter className="bg-popover/50 border-border">

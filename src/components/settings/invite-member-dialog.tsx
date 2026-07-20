@@ -38,7 +38,7 @@ import {
 } from '@/components/ui/select';
 import { useAuth } from '@/hooks/use-auth';
 
-type InviteRole = 'admin' | 'agent' | 'viewer';
+type InviteRole = 'admin' | 'agent' | 'vistoria' | 'viewer';
 
 interface InviteMemberDialogProps {
   open: boolean;
@@ -59,6 +59,8 @@ const ROLE_DESCRIPTIONS: Record<InviteRole, string> = {
     'Pode convidar membros, gerenciar configurações, enviar mensagens e editar dados.',
   agent:
     'Pode usar a caixa de entrada, contatos, transmissões, automações e fluxos. Sem acesso a configurações ou membros.',
+  vistoria:
+    'Pode criar e gerenciar vistorias. Acesso limitado a funcionalidades.',
   viewer: 'Acesso somente leitura em todas as páginas. Não pode enviar ou editar nada.',
 };
 
@@ -196,7 +198,7 @@ export function InviteMemberDialog({
               <DialogDescription className="text-muted-foreground">
                 Compartilhe este link com seu novo colega. Ele poderá
                 se cadastrar (ou entrar) e se juntar à conta como{' '}
-                <span className="font-medium text-muted-foreground">                {result.role === 'admin' ? 'Admin' : result.role === 'agent' ? 'Agente' : 'Visualizador'}</span>
+                <span className="font-medium text-muted-foreground">                {result.role === 'admin' ? 'Admin' : result.role === 'agent' ? 'Agente' : result.role === 'vistoria' ? 'Vistoria' : 'Visualizador'}</span>
                 . O link é válido por{' '}
                 <span className="font-medium text-muted-foreground">
                   {result.expiresInDays} dia{result.expiresInDays === 1 ? '' : 's'}
@@ -290,6 +292,7 @@ export function InviteMemberDialog({
                   <SelectContent>
                     <SelectItem value="admin">Admin</SelectItem>
                     <SelectItem value="agent">Agente</SelectItem>
+                    <SelectItem value="vistoria">Vistoria</SelectItem>
                     <SelectItem value="viewer">Visualizador</SelectItem>
                   </SelectContent>
                 </Select>

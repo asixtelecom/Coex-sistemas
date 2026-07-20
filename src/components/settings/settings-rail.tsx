@@ -6,23 +6,22 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/use-auth';
 import {
   AGENT_SECTIONS,
+  CHANNEL_SECTIONS,
   RAIL_GROUPS,
   SECTION_META,
   SETTINGS_SECTIONS,
   type SettingsSection,
 } from './settings-sections';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { ChevronDown, Radio } from 'lucide-react';
 
-// Width at/above which the rail is a vertical column (already in view, so
-// no auto-scroll needed). Mirrors the Tailwind `lg:` breakpoint that
-// drives the row→column switch in the markup below — keep the two in sync.
 const RAIL_DESKTOP_MIN_PX = 1024;
 
-/**
- * The settings left rail — grouped, vertical on desktop and a
- * horizontal scroller on narrow screens (mirrors the mockup's ≤920px
- * behaviour). The active item auto-scrolls into view when the rail is
- * horizontal so a deep-linked section is never off-screen.
- */
 export function SettingsRail({
   active,
   onSelect,
@@ -34,15 +33,10 @@ export function SettingsRail({
 }) {
   const { canEditSettings } = useAuth();
 
-  // Non‑admin users (agents/viewers) only see their personal sections.
-  // Defaulting to `true` ensures the admin view is unchanged when the
-  // hook hasn't settled yet (avoids a flash of a sparse rail).
   const visibleSections: readonly SettingsSection[] = canEditSettings
     ? SETTINGS_SECTIONS
     : AGENT_SECTIONS;
 
-  // For the rail groups, we keep the same structure but only include
-  // items from visibleSections.
   const visibleGroups = RAIL_GROUPS.map(({ label, group }) => ({
     label,
     group,
@@ -51,10 +45,15 @@ export function SettingsRail({
     ),
   })).filter((g) => g.items.length > 0);
 
+  const channelItems = canEditSettings
+    ? (CHANNEL_SECTIONS as readonly SettingsSection[]).filter(
+        (s) => visibleSections.includes(s),
+      )
+    : [];
+  const isChannelActive = (CHANNEL_SECTIONS as readonly string[]).includes(active);
+
   const activeRef = useRef<HTMLButtonElement>(null);
 
-  // When horizontal (mobile), keep the active chip in view. On desktop
-  // the rail is a static column, so skip.
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (window.matchMedia(`(min-width: ${RAIL_DESKTOP_MIN_PX}px)`).matches) return;
@@ -75,6 +74,11 @@ export function SettingsRail({
       )}
     >
       {visibleGroups.map(({ label, group, items }) => {
+        const channelSecs = new Set<string>(CHANNEL_SECTIONS);
+        const regularItems = items.filter((s) => !channelSecs.has(s));
+        const groupChannelItems = items.filter((s) => channelSecs.has(s));
+        const showCanais = group === 'workspace' && groupChannelItems.length > 0;
+
         return (
           <div
             key={group}
@@ -85,7 +89,55 @@ export function SettingsRail({
                 {label}
               </div>
             ) : null}
-            {items.map((s) => {
+
+            {showCanais && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className={cn(
+                      'flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium whitespace-nowrap transition-colors',
+                      'lg:w-full',
+                      isChannelActive
+                        ? 'bg-primary-soft text-primary'
+                        : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                    )}
+                    ref={isChannelActive ? activeRef : undefined}
+                  >
+                    <Radio className="size-4 shrink-0" />
+                    <span className="flex-1">Canais</span>
+                    <ChevronDown className="size-3.5 shrink-0 opacity-60" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  side="right"
+                  align="start"
+                  sideOffset={4}
+                  className="w-48"
+                >
+                  {groupChannelItems.map((s) => {
+                    const meta = SECTION_META[s];
+                    const Icon = meta.icon;
+                    const isActive = s === active;
+                    return (
+                      <DropdownMenuItem
+                        key={s}
+                        onClick={() => onSelect(s)}
+                        className={cn(
+                          'cursor-pointer gap-2.5',
+                          isActive && 'bg-primary-soft text-primary',
+                        )}
+                      >
+                        <Icon className="size-4 shrink-0" />
+                        <span>{meta.label}</span>
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+
+            {regularItems.map((s) => {
               const meta = SECTION_META[s];
               const Icon = meta.icon;
               const isActive = s === active;

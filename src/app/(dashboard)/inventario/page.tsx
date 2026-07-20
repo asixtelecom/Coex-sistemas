@@ -566,7 +566,7 @@ export default function InventarioPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b text-muted-foreground">
-                      <th className="text-left p-2 font-medium min-w-[200px]">Item</th>
+                      <th className="text-left p-2 font-medium min-w-[280px]">Item</th>
                       <th className="text-center p-2 font-medium w-20">Qtd</th>
                       <th className="text-center p-2 font-medium w-24">Cubagem (M³)</th>
                       <th className="text-center p-2 font-medium w-24">Total M³</th>

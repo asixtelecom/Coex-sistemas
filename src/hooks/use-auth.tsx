@@ -104,6 +104,8 @@ interface AuthContextValue {
   isAgent: boolean;
   /** True if `accountRole === 'viewer'`. */
   isViewer: boolean;
+  /** True if `accountRole === 'vistoria'`. */
+  isVistoria: boolean;
   /** True if the caller can manage members (admin+). */
   canManageMembers: boolean;
   /** True if the caller can edit account-wide settings (admin+). */
@@ -339,6 +341,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAdmin: role === "admin",
       isAgent: role === "agent",
       isViewer: role === "viewer",
+      isVistoria: role === "vistoria",
       canManageMembers: role ? canManageMembersFor(role) : false,
       canEditSettings: role ? canEditSettingsFor(role) : false,
       canEditOwnProfile: role ? canEditOwnProfileFor(role) : false,
@@ -408,6 +411,7 @@ export function useAuth(): AuthContextValue {
       isAdmin: false,
       isAgent: false,
       isViewer: false,
+      isVistoria: false,
       canManageMembers: false,
       canEditSettings: false,
       canEditOwnProfile: false,

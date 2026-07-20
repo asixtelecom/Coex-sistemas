@@ -20,7 +20,8 @@ export type FeaturePermission =
   | 'agenda'
   | 'contacts'
   | 'pipelines'
-  | 'guarda-volume';
+  | 'guarda-volume'
+  | 'vistoria';
 
 export const FEATURE_PERMISSIONS: readonly FeaturePermission[] = [
   'broadcasts',
@@ -37,6 +38,7 @@ export const FEATURE_PERMISSIONS: readonly FeaturePermission[] = [
   'contacts',
   'pipelines',
   'guarda-volume',
+  'vistoria',
 ] as const;
 
 export type FeaturePermissions = Record<FeaturePermission, boolean>;
@@ -57,6 +59,7 @@ export function getDefaultPermissions(role: AccountRole): FeaturePermissions {
     contacts: true,
     pipelines: true,
     'guarda-volume': true,
+    vistoria: true,
   };
   const allFalse: FeaturePermissions = {
     broadcasts: false,
@@ -73,8 +76,13 @@ export function getDefaultPermissions(role: AccountRole): FeaturePermissions {
     contacts: false,
     pipelines: false,
     'guarda-volume': false,
+    vistoria: false,
   };
-  return role === 'owner' || role === 'admin' ? allTrue : allFalse;
+  if (role === 'owner' || role === 'admin') return allTrue;
+  if (role === 'vistoria') {
+    return { ...allFalse, agenda: true, dashboard: true, contacts: true, inbox: false, pipelines: true, vistoria: true };
+  }
+  return allFalse;
 }
 export function hasFeaturePermission(
   permissions: FeaturePermissions | null | undefined,
@@ -100,11 +108,12 @@ export function hasFeaturePermission(
 // changes a one-file diff.
 // ============================================================
 
-export type AccountRole = "owner" | "admin" | "agent" | "viewer";
+export type AccountRole = "owner" | "admin" | "agent" | "vistoria" | "viewer";
 
 /** Ordered list of every valid role, lowest privilege first. */
 export const ACCOUNT_ROLES: readonly AccountRole[] = [
   "viewer",
+  "vistoria",
   "agent",
   "admin",
   "owner",
@@ -122,6 +131,8 @@ export function roleRank(role: AccountRole): number {
       return 3;
     case "agent":
       return 2;
+    case "vistoria":
+      return 1.5;
     case "viewer":
       return 1;
   }
@@ -180,7 +191,7 @@ export function canSendMessages(role: AccountRole): boolean {
  * shows the "Read-only" tooltip without inverting `canSendMessages`).
  */
 export function canViewOnly(role: AccountRole): boolean {
-  return role === "viewer";
+  return role === "viewer" || role === "vistoria";
 }
 
 /** Owner only: irreversible destructive operations. */

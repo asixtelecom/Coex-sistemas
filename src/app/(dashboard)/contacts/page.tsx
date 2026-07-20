@@ -45,6 +45,7 @@ import {
   Smartphone,
   Lock,
   AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
 import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
@@ -54,6 +55,7 @@ import { useCan } from '@/hooks/use-can';
 import { useAuth } from '@/hooks/use-auth';
 import { GatedButton } from '@/components/ui/gated-button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { displayPhone } from '@/lib/whatsapp/phone-utils';
 
 const PAGE_SIZE = 25;
 
@@ -72,6 +74,12 @@ export default function ContactsPage() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
+
+  // Sync photos states
+  const [syncingPhotos, setSyncingPhotos] = useState(false);
+  const [syncProgress, setSyncProgress] = useState({ processed: 0, updated: 0, total: 0 });
+  const [syncingAvatars, setSyncingAvatars] = useState<Array<{ phone: string; avatarUrl: string | null }>>([]);
+  const [syncDialogOpen, setSyncDialogOpen] = useState(false);
 
   // Modals
   const [formOpen, setFormOpen] = useState(false);
@@ -194,6 +202,63 @@ export default function ContactsPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchContacts();
   }, [fetchContacts]);
+
+  async function handleSyncPhotos() {
+    setSyncingPhotos(true);
+    setSyncProgress({ processed: 0, updated: 0, total: 0 });
+    setSyncingAvatars([]);
+    setSyncDialogOpen(true);
+
+    let currentOffset = 0;
+    let finished = false;
+
+    while (!finished) {
+      try {
+        const response = await fetch('/api/contacts/sync-photos', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ offset: currentOffset }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Erro na requisição');
+        }
+
+        const data = await response.json();
+        if (data.error) {
+          throw new Error(data.error);
+        }
+
+        setSyncProgress((prev) => ({
+          processed: prev.processed + (data.processed || 0),
+          updated: prev.updated + (data.updated || 0),
+          total: data.total || 0,
+        }));
+
+        if (data.results && data.results.length > 0) {
+          setSyncingAvatars((prev) => [
+            ...data.results.filter((r: any) => r.avatar_url).map((r: any) => ({
+              phone: r.phone,
+              avatarUrl: r.avatar_url,
+            })),
+            ...prev,
+          ].slice(0, 30));
+        }
+
+        currentOffset = data.nextOffset;
+        finished = data.done;
+
+        if (finished) {
+          toast.success('Sincronização de fotos concluída!');
+          fetchContacts();
+        }
+      } catch (err: any) {
+        toast.error('Erro na sincronização: ' + err.message);
+        finished = true;
+      }
+    }
+    setSyncingPhotos(false);
+  }
 
   function openAddForm() {
     setEditContact(null);
@@ -363,6 +428,19 @@ export default function ContactsPage() {
             <Upload className="size-4" />
             Importar
           </GatedButton>
+          <Button
+            variant="outline"
+            onClick={() => handleSyncPhotos()}
+            disabled={syncingPhotos}
+            className="border-border text-muted-foreground hover:bg-muted"
+          >
+            {syncingPhotos ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <RefreshCw className="size-4" />
+            )}
+            Sincronizar Fotos
+          </Button>
           <GatedButton
             canAct={canEdit}
             gateReason="add or import contacts"
@@ -513,7 +591,7 @@ export default function ContactsPage() {
                   </TableCell>
                   <TableCell className="text-muted-foreground font-mono text-xs">
                     <div className="flex items-center gap-1">
-                      {contact.phone}
+                      {displayPhone(contact.phone)}
                       {phoneCounts[contact.id] > 0 && (
                         <span className="inline-flex items-center gap-0.5 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
                           <Smartphone className="size-2.5" />
@@ -581,16 +659,18 @@ export default function ContactsPage() {
                         align="end"
                         className="bg-popover border-border"
                       >
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openEditForm(contact);
-                          }}
-                          className="text-popover-foreground focus:bg-muted focus:text-foreground"
-                        >
-                          <Pencil className="size-4" />
-                          Editar
-                        </DropdownMenuItem>
+                        {canEdit && (
+                          <DropdownMenuItem
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openEditForm(contact);
+                            }}
+                            className="text-popover-foreground focus:bg-muted focus:text-foreground"
+                          >
+                            <Pencil className="size-4" />
+                            Editar
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuSeparator className="bg-border" />
                         <DropdownMenuItem
                           variant="destructive"
@@ -793,6 +873,87 @@ export default function ContactsPage() {
             >
               {deleting && <Loader2 className="size-4 animate-spin" />}
               Excluir
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Sync Photos Progress */}
+      <Dialog open={syncDialogOpen} onOpenChange={(open) => { if (!open && !syncingPhotos) setSyncDialogOpen(false); }}>
+        <DialogContent className="bg-popover border-border text-popover-foreground sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-popover-foreground">
+              Sincronização de Fotos de Perfil
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              Buscando fotos de perfil atualizadas do WhatsApp para seus contatos.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4 px-6">
+            <div className="flex justify-between text-sm font-medium">
+              <span className="text-muted-foreground">Progresso:</span>
+              <span className="text-foreground">{syncProgress.processed} / {syncProgress.total} contatos</span>
+            </div>
+
+            <div className="w-full bg-muted rounded-full h-2.5 overflow-hidden">
+              <div 
+                className="bg-primary h-2.5 rounded-full transition-all duration-300" 
+                style={{ width: `${syncProgress.total > 0 ? (syncProgress.processed / syncProgress.total) * 100 : 0}%` }}
+              />
+            </div>
+
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>Atualizados: {syncProgress.updated}</span>
+              <span>Lote atual: {Math.floor(syncProgress.processed / 28) + 1}</span>
+            </div>
+
+            {syncingAvatars.length > 0 && (
+              <div className="space-y-2 mt-4">
+                <Label className="text-xs text-muted-foreground">Fotos encontradas recentemente:</Label>
+                <div className="grid grid-cols-6 gap-2 max-h-36 overflow-y-auto p-1 border border-border rounded bg-muted/20">
+                  {syncingAvatars.map((av, idx) => (
+                    <div key={idx} className="relative aspect-square rounded-md overflow-hidden bg-card border border-border flex items-center justify-center">
+                      {av.avatarUrl ? (
+                        <img 
+                          src={av.avatarUrl} 
+                          alt="Avatar" 
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLElement).style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <Smartphone className="size-4 text-muted-foreground" />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {syncingPhotos && (
+              <div className="flex items-center justify-center gap-2 py-2 text-sm text-primary">
+                <Loader2 className="size-4 animate-spin" />
+                <span>Processando lote... Por favor, não feche esta janela.</span>
+              </div>
+            )}
+
+            {!syncingPhotos && (
+              <div className="text-center py-2 text-sm text-emerald-400 font-medium">
+                Sincronização concluída! {syncProgress.updated} fotos atualizadas.
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="bg-popover border-border">
+            <Button
+              variant="outline"
+              disabled={syncingPhotos}
+              onClick={() => setSyncDialogOpen(false)}
+              className="border-border text-muted-foreground hover:bg-muted"
+            >
+              Fechar
             </Button>
           </DialogFooter>
         </DialogContent>

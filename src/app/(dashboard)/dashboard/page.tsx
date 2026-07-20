@@ -35,6 +35,7 @@ import { ConversationsChart } from '@/components/dashboard/conversations-chart'
 import { PipelineDonut } from '@/components/dashboard/pipeline-donut'
 import { ResponseTimeChart } from '@/components/dashboard/response-time-chart'
 import { ActivityFeed } from '@/components/dashboard/activity-feed'
+import { DialerWidget } from '@/components/dashboard/dialer-widget'
 import { ChannelStats } from '@/components/dashboard/channel-stats'
 
 type RangeDays = 7 | 30 | 90
@@ -299,11 +300,14 @@ export default function DashboardPage() {
       <ResponseTimeChart data={responseTime} loading={responseTimeLoading} />
 
       {/* Activity feed — agents see only messages and contacts */}
+      <DialerWidget />
       <ActivityFeed
         items={activity}
         loading={activityLoading}
         showAll={canEditSettings}
       />
+
+      {/* Dialer widget — only renders if enabled and code is saved */}
     </div>
   )
 }

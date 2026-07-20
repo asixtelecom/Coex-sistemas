@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
-import { Copy, Eye, EyeOff, Loader2, Sparkles, UserPlus } from 'lucide-react';
+import { Copy, Eye, EyeOff, Loader2, Sparkles, UserPlus, Mail } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -23,7 +24,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
-type AgentRole = 'admin' | 'agent' | 'viewer';
+type AgentRole = 'admin' | 'agent' | 'vistoria' | 'viewer';
 
 interface CreateAgentDialogProps {
   open: boolean;
@@ -34,8 +35,15 @@ interface CreateAgentDialogProps {
 const ROLE_DESCRIPTIONS: Record<AgentRole, string> = {
   admin: 'Pode gerenciar membros, configurações e usar todas as funcionalidades.',
   agent: 'Pode usar caixa de entrada, contatos, transmissões e automações. Sem acesso a configurações.',
+  vistoria: 'Pode criar e gerenciar vistorias. Acesso limitado a funcionalidades.',
   viewer: 'Acesso somente leitura. Não pode enviar ou editar nada.',
 };
+
+interface Mailbox {
+  id: number;
+  title: string;
+  color: string;
+}
 
 export function CreateAgentDialog({ open, onOpenChange, onCreated }: CreateAgentDialogProps) {
   const [role, setRole] = useState<AgentRole>('agent');
@@ -44,6 +52,8 @@ export function CreateAgentDialog({ open, onOpenChange, onCreated }: CreateAgent
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
+  const [selectedMailboxes, setSelectedMailboxes] = useState<number[]>([]);
   const [result, setResult] = useState<{
     email: string;
     password: string;
@@ -51,11 +61,25 @@ export function CreateAgentDialog({ open, onOpenChange, onCreated }: CreateAgent
     role: string;
   } | null>(null);
 
+  useEffect(() => {
+    if (!open) return;
+    const supabase = createClient();
+    supabase
+      .from('mailboxes')
+      .select('id, title, color')
+      .eq('deleted', false)
+      .order('title')
+      .then(({ data }) => {
+        if (data) setMailboxes(data);
+      });
+  }, [open]);
+
   function reset() {
     setRole('agent');
     setName('');
     setEmail('');
     setPassword('');
+    setSelectedMailboxes([]);
     setResult(null);
     setSubmitting(false);
   }
@@ -84,6 +108,16 @@ export function CreateAgentDialog({ open, onOpenChange, onCreated }: CreateAgent
         const payload = await res.json().catch(() => ({}));
         toast.error(payload.error || 'Erro ao criar agente');
         return;
+      }
+
+      const created = await res.json().catch(() => null) as { user?: { id?: string } } | null;
+
+      if (selectedMailboxes.length > 0 && created?.user?.id) {
+        await fetch('/api/account/agent-mailboxes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: created.user.id, mailbox_ids: selectedMailboxes }),
+        });
       }
 
       setResult({ email: trimmedEmail, password, full_name: trimmedName, role });
@@ -197,11 +231,43 @@ export function CreateAgentDialog({ open, onOpenChange, onCreated }: CreateAgent
                   <SelectContent>
                     <SelectItem value="admin">Admin</SelectItem>
                     <SelectItem value="agent">Agente</SelectItem>
+                    <SelectItem value="vistoria">Vistoria</SelectItem>
                     <SelectItem value="viewer">Visualizador</SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">{ROLE_DESCRIPTIONS[role]}</p>
               </div>
+
+              {mailboxes.length > 0 && (
+                <div className="space-y-2">
+                  <Label className="text-muted-foreground flex items-center gap-1.5">
+                    <Mail className="size-3.5" />
+                    Caixas de e-mail atribuídas
+                  </Label>
+                  <p className="text-xs text-muted-foreground">Selecione as caixas que este agente poderá usar para enviar e-mails.</p>
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto rounded-md border border-border p-2">
+                    {mailboxes.map((mb) => (
+                      <label key={mb.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-1.5 py-1 transition-colors">
+                        <input
+                          type="checkbox"
+                          checked={selectedMailboxes.includes(mb.id)}
+                          onChange={(e) => {
+                            setSelectedMailboxes((prev) =>
+                              e.target.checked ? [...prev, mb.id] : prev.filter((id) => id !== mb.id)
+                            );
+                          }}
+                          className="size-3.5 rounded border-border"
+                        />
+                        <span
+                          className="inline-block size-2.5 rounded-full shrink-0"
+                          style={{ backgroundColor: mb.color }}
+                        />
+                        <span className="text-sm text-foreground">{mb.title}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <DialogFooter className="bg-popover border-border">

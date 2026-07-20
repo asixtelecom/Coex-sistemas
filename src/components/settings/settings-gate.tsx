@@ -37,8 +37,8 @@ export function SettingsGate({ children }: { children: React.ReactNode }) {
             Acesso negado
           </DialogTitle>
           <DialogDescription className="text-base leading-relaxed text-foreground/80">
-            Esta Ã© a primeira e Ãºltima vez que vocÃª faz isso. Mais uma
-            tentativa serÃ¡ notificada ao administrador do sistema.
+            Esta é a primeira e última vez que você faz isso. Mais uma
+            tentativa será notificada ao administrador do sistema.
           </DialogDescription>
         </DialogHeader>
         <div className="flex justify-end">

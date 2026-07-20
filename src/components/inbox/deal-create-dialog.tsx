@@ -12,20 +12,8 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-
-const SERVICE_TYPES = [
-  "Mudança residencial",
-  "Mudança Comercial",
-  "Mudança Iterestadual",
-  "Içamento",
-  "Guarda Volume",
-  "Transportes de Cargas",
-  "Montagem + Desmontagem",
-  "Montagem",
-  "Desmontagem",
-  "armazenamento",
-  "Transporte",
-]
+import { ServiceSelector } from "@/components/ui/service-selector"
+import { servicesToString } from "@/lib/services"
 
 interface DealCreateDialogProps {
   open: boolean
@@ -47,17 +35,17 @@ export function DealCreateDialog({
   contactName,
   onSubmit,
 }: DealCreateDialogProps) {
-  const [serviceType, setServiceType] = useState("")
+  const [selectedServices, setSelectedServices] = useState<string[]>([])
   const [originAddress, setOriginAddress] = useState("")
   const [destinationAddress, setDestinationAddress] = useState("")
   const [movingDate, setMovingDate] = useState("")
 
   const handleSubmit = () => {
-    onSubmit({ serviceType, originAddress, destinationAddress, movingDate })
+    onSubmit({ serviceType: servicesToString(selectedServices), originAddress, destinationAddress, movingDate })
     setOriginAddress("")
     setDestinationAddress("")
     setMovingDate("")
-    setServiceType("")
+    setSelectedServices([])
     onOpenChange(false)
   }
 
@@ -73,20 +61,11 @@ export function DealCreateDialog({
 
         <div className="space-y-4 py-2">
           <div className="space-y-2">
-            <Label htmlFor="serviceType">Tipo de Serviço</Label>
-            <select
-              id="serviceType"
-              value={serviceType}
-              onChange={(e) => setServiceType(e.target.value)}
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <option value="">Selecione um tipo de serviço</option>
-              {SERVICE_TYPES.map((type) => (
-                <option key={type} value={type}>
-                  {type}
-                </option>
-              ))}
-            </select>
+            <Label>Tipo de Serviço</Label>
+            <ServiceSelector
+              value={selectedServices}
+              onChange={setSelectedServices}
+            />
           </div>
 
           <div className="space-y-2">
@@ -124,7 +103,7 @@ export function DealCreateDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
-          <Button onClick={handleSubmit} disabled={!serviceType}>Criar Negócio</Button>
+          <Button onClick={handleSubmit} disabled={selectedServices.length === 0}>Criar Negócio</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

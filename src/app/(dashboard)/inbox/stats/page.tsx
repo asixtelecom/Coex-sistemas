@@ -1,16 +1,18 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { format, subDays, startOfWeek, parseISO, startOfMonth } from 'date-fns'
 import { Card } from '@/components/ui/card'
-import { ArrowLeft, AlertCircle, EyeOff, X } from 'lucide-react'
+import { ArrowLeft, AlertCircle, EyeOff, X, ChevronDown } from 'lucide-react'
 import Link from 'next/link'
 
 type Period = 'day' | 'week' | 'month' | 'year'
+type ChannelFilter = 'all' | 'whatsapp' | 'instagram' | 'messenger' | 'telegram' | 'webchat' | 'linkedin' | 'tiktok' | 'youtube'
 
 interface StatsRow {
   label: string
+  phone: string
   total: number
   unread: number
   readRate: number
@@ -31,13 +33,36 @@ const MONTHS: Record<string, string> = {
 }
 
 export default function InboxStatsPage() {
-  const [period, setPeriod] = useState<Period>('day')
+  const [period, setPeriod] = useState<Period>('month')
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState<StatsRow[]>([])
   const [totals, setTotals] = useState({ total: 0, unread: 0, readRate: 0 })
   const [error, setError] = useState<string | null>(null)
+  const [channelFilter, setChannelFilter] = useState<ChannelFilter>('all')
   const [drillDown, setDrillDown] = useState<{ label: string; contacts: UnreadContact[]; loading: boolean } | null>(null)
+  const [whatsappChannels, setWhatsappChannels] = useState<{ id: string; name: string }>([])
+  const [selectedWhatsappChannel, setSelectedWhatsappChannel] = useState<string>('all')
+  const [rawMessages, setRawMessages] = useState<Array<{ sender_type: string; recipient_read_at: string | null; created_at: string; conversation_id: string }>>([])
+  const [rawConvChannelMap, setRawConvChannelMap] = useState<Map<string, { type: string; name: string; channel_id: string | null; account_id: string }>>(new Map())
   const supabase = createClient()
+
+  useEffect(() => {
+    async function loadChannels() {
+      const { data } = await supabase
+        .from('channels')
+        .select('id, name')
+        .eq('type', 'whatsapp')
+      if (data) {
+        const channels = data.map(c => ({
+          id: c.id,
+          name: c.name || 'WhatsApp',
+        }))
+        setWhatsappChannels(channels)
+      }
+    }
+    loadChannels()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const fetchStats = useCallback(async () => {
     setLoading(true)
@@ -45,16 +70,16 @@ export default function InboxStatsPage() {
     try {
       const now = new Date()
       const periodDays: Record<Period, number> = {
-        day: 14,
+        day: 90,
         week: 90,
         month: 365,
         year: 1825,
       }
       const startDate = subDays(now, periodDays[period])
 
-      const { data, error: err } = await supabase
+      const { data: messagesData, error: err } = await supabase
         .from('messages')
-        .select('sender_type, recipient_read_at, created_at')
+        .select('sender_type, recipient_read_at, created_at, conversation_id')
         .gte('created_at', startDate.toISOString())
         .eq('sender_type', 'agent')
         .order('created_at', { ascending: true })
@@ -65,67 +90,47 @@ export default function InboxStatsPage() {
         return
       }
 
-      if (!data || data.length === 0) {
-        setStats([])
-        setTotals({ total: 0, unread: 0, readRate: 0 })
+      if (!messagesData || messagesData.length === 0) {
+        setRawMessages([])
+        setRawConvChannelMap(new Map())
         setLoading(false)
         return
       }
 
-      const groups = new Map<string, { total: number; unread: number; start: string; end: string }>()
+      const convIds = [...new Set(messagesData.map(m => m.conversation_id))]
 
-      for (const msg of data) {
-        const d = parseISO(msg.created_at)
-        let key: string
-        let periodStart: string
-        let periodEnd: string
+      const { data: conversations } = await supabase
+        .from('conversations')
+        .select('id, account_id, channel_id')
+        .in('id', convIds)
 
-        if (period === 'day') {
-          key = format(d, 'yyyy-MM-dd')
-          periodStart = key + 'T00:00:00'
-          periodEnd = key + 'T23:59:59'
-        } else if (period === 'week') {
-          const sw = startOfWeek(d, { weekStartsOn: 0 })
-          key = format(sw, 'yyyy-MM-dd')
-          periodStart = format(sw, "yyyy-MM-dd'T'00:00:00")
-          periodEnd = format(subDays(sw, -6), "yyyy-MM-dd'T'23:59:59")
-        } else if (period === 'month') {
-          key = format(d, 'yyyy-MM')
-          const sm = startOfMonth(d)
-          periodStart = format(sm, "yyyy-MM-dd'T'00:00:00")
-          const nextMonth = new Date(sm.getFullYear(), sm.getMonth() + 1, 0)
-          periodEnd = format(nextMonth, "yyyy-MM-dd'T'23:59:59")
-        } else {
-          key = format(d, 'yyyy')
-          periodStart = key + '-01-01T00:00:00'
-          periodEnd = key + '-12-31T23:59:59'
+      const channelIds = [...new Set((conversations || []).map(c => c.channel_id).filter(Boolean))] as string[]
+      const { data: channels } = channelIds.length > 0
+        ? await supabase.from('channels').select('id, type, name').in('id', channelIds)
+        : { data: [] }
+
+      const channelMap = new Map<string, { type: string; name: string }>()
+      if (channels) {
+        for (const ch of channels) {
+          channelMap.set(ch.id, { type: ch.type, name: ch.name })
         }
-
-        if (!groups.has(key)) groups.set(key, { total: 0, unread: 0, start: periodStart, end: periodEnd })
-        const g = groups.get(key)!
-        g.total++
-        if (!msg.recipient_read_at) g.unread++
       }
 
-      const rows: StatsRow[] = []
-      let grandTotal = 0
-      let grandUnread = 0
+      const newConvChannelMap = new Map<string, { type: string; name: string; channel_id: string | null; account_id: string }>()
 
-      for (const [key, val] of groups) {
-        const read = val.total - val.unread
-        const readRate = val.total > 0 ? Math.round((read / val.total) * 100) : 0
-        rows.push({ label: key, total: val.total, unread: val.unread, readRate, periodStart: val.start, periodEnd: val.end })
-        grandTotal += val.total
-        grandUnread += val.unread
+      if (conversations) {
+        for (const c of conversations) {
+          const ch = c.channel_id ? channelMap.get(c.channel_id) : undefined
+          if (ch) {
+            newConvChannelMap.set(c.id, { type: ch.type, name: ch.name, channel_id: c.channel_id, account_id: c.account_id })
+          } else {
+            newConvChannelMap.set(c.id, { type: 'whatsapp', name: 'WhatsApp', channel_id: null, account_id: c.account_id })
+          }
+        }
       }
 
-      rows.reverse()
-      setStats(rows)
-      setTotals({
-        total: grandTotal,
-        unread: grandUnread,
-        readRate: grandTotal > 0 ? Math.round(((grandTotal - grandUnread) / grandTotal) * 100) : 0,
-      })
+      setRawMessages(messagesData)
+      setRawConvChannelMap(newConvChannelMap)
     } catch (e: any) {
       setError(e?.message || 'Erro inesperado')
     }
@@ -135,6 +140,107 @@ export default function InboxStatsPage() {
   useEffect(() => {
     fetchStats()
   }, [fetchStats])
+
+  // Compute stats client-side whenever filter or raw data changes
+  useEffect(() => {
+    const channelLabel = (ch: { type: string; name: string; channel_id: string | null; account_id: string }) => {
+      if (ch.type === 'whatsapp') {
+        return ch.name || 'WhatsApp'
+      }
+      const typeNames: Record<string, string> = {
+        instagram: 'Instagram',
+        messenger: 'Messenger',
+        telegram: 'Telegram',
+        webchat: 'Webchat',
+        linkedin: 'LinkedIn',
+      }
+      return (typeNames[ch.type] || ch.type) + ' - ' + ch.name
+    }
+
+    const filteredMessages = rawMessages.filter(m => {
+      const ch = rawConvChannelMap.get(m.conversation_id)
+      const matchesChannel = channelFilter === 'all' || (ch ? ch.type === channelFilter : channelFilter === 'whatsapp')
+      if (!matchesChannel) return false
+      if (channelFilter === 'whatsapp' && selectedWhatsappChannel !== 'all') {
+        return ch ? ch.channel_id === selectedWhatsappChannel : false
+      }
+      return true
+    })
+
+    const groups = new Map<string, { total: number; unread: number; start: string; end: string; phone: string }>()
+
+    for (const msg of filteredMessages) {
+      const d = parseISO(msg.created_at)
+      const ch = rawConvChannelMap.get(msg.conversation_id)
+      const label = ch ? channelLabel(ch) : 'WhatsApp'
+
+      let periodKey: string
+      let periodStart: string
+      let periodEnd: string
+
+      if (period === 'day') {
+        periodKey = format(d, 'yyyy-MM-dd')
+        periodStart = periodKey + 'T00:00:00'
+        periodEnd = periodKey + 'T23:59:59'
+      } else if (period === 'week') {
+        const sw = startOfWeek(d, { weekStartsOn: 0 })
+        periodKey = format(sw, 'yyyy-MM-dd')
+        periodStart = periodKey + 'T00:00:00'
+        periodEnd = periodKey + 'T23:59:59'
+      } else if (period === 'month') {
+        periodKey = format(d, 'yyyy-MM')
+        const sm = startOfMonth(d)
+        periodStart = periodKey + '-01T00:00:00'
+        periodEnd = periodKey + '-28T23:59:59'
+      } else {
+        periodKey = format(d, 'yyyy')
+        periodStart = periodKey + '-01-01T00:00:00'
+        periodEnd = periodKey + '-12-31T23:59:59'
+      }
+
+      const groupKey = label + '|' + periodKey
+      if (!groups.has(groupKey)) {
+        groups.set(groupKey, { total: 0, unread: 0, start: periodStart, end: periodEnd, phone: label })
+      }
+      const g = groups.get(groupKey)!
+      g.total++
+      if (!msg.recipient_read_at) g.unread++
+    }
+
+    const rows: StatsRow[] = []
+    let grandTotal = 0
+    let grandUnread = 0
+
+    for (const [groupKey, val] of groups) {
+      const pipeIdx = groupKey.indexOf('|')
+      const periodLabel = groupKey.slice(pipeIdx + 1)
+      const read = val.total - val.unread
+      const readRate = val.total > 0 ? Math.round((read / val.total) * 100) : 0
+      rows.push({
+        label: periodLabel,
+        phone: val.phone,
+        total: val.total,
+        unread: val.unread,
+        readRate,
+        periodStart: val.start,
+        periodEnd: val.end,
+      })
+      grandTotal += val.total
+      grandUnread += val.unread
+    }
+
+    rows.sort((a, b) => {
+      const cmp = b.label.localeCompare(a.label)
+      if (cmp !== 0) return cmp
+      return a.phone.localeCompare(b.phone)
+    })
+    setStats(rows)
+    setTotals({
+      total: grandTotal,
+      unread: grandUnread,
+      readRate: grandTotal > 0 ? Math.round(((grandTotal - grandUnread) / grandTotal) * 100) : 0,
+    })
+  }, [rawMessages, rawConvChannelMap, channelFilter, selectedWhatsappChannel, period])
 
   const handleRowClick = async (row: StatsRow) => {
     if (row.unread === 0) return
@@ -157,7 +263,7 @@ export default function InboxStatsPage() {
 
       const { data: convs } = await supabase
         .from('conversations')
-        .select('id, contact_id, contact:contacts(name, phone)')
+        .select('id, contact_id, channel_id, account_id, contact:contacts(name, phone)')
         .in('id', convIds)
 
       if (!convs) {
@@ -165,7 +271,40 @@ export default function InboxStatsPage() {
         return
       }
 
-      const contacts: UnreadContact[] = convs.map(c => ({
+      // Fetch active channels to match the label
+      const channelIds = [...new Set(convs.map(c => c.channel_id).filter(Boolean))] as string[]
+      const { data: channels } = channelIds.length > 0
+        ? await supabase.from('channels').select('id, type, name').in('id', channelIds)
+        : { data: [] }
+
+      const channelMap = new Map<string, { type: string; name: string }>()
+      if (channels) {
+        for (const ch of channels) {
+          channelMap.set(ch.id, { type: ch.type, name: ch.name })
+        }
+      }
+
+      const channelLabel = (ch: { type: string; name: string }) => {
+        if (ch.type === 'whatsapp') {
+          return ch.name || 'WhatsApp'
+        }
+        const typeNames: Record<string, string> = {
+          instagram: 'Instagram',
+          messenger: 'Messenger',
+          telegram: 'Telegram',
+          webchat: 'Webchat',
+          linkedin: 'LinkedIn',
+        }
+        return (typeNames[ch.type] || ch.type) + ' - ' + ch.name
+      }
+
+      const filteredConvs = convs.filter(c => {
+        const ch = c.channel_id ? channelMap.get(c.channel_id) : undefined
+        const label = ch ? channelLabel(ch) : 'WhatsApp'
+        return label === row.phone
+      })
+
+      const contacts: UnreadContact[] = filteredConvs.map(c => ({
         name: (c.contact as any)?.name || 'Desconhecido',
         phone: (c.contact as any)?.phone || '',
         unreadCount: data.filter(m => m.conversation_id === c.id).length,
@@ -180,15 +319,15 @@ export default function InboxStatsPage() {
   const formatLabel = (label: string) => {
     if (period === 'day') {
       const d = parseISO(label)
-      return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`
+      return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0')
     }
     if (period === 'week') {
       const d = parseISO(label)
-      return `Sem ${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`
+      return 'Sem ' + String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0')
     }
     if (period === 'month') {
       const parts = label.split('-')
-      return `${MONTHS[parts[1]] || parts[1]}/${parts[0].slice(2)}`
+      return (MONTHS[parts[1]] || parts[1]) + '/' + parts[0].slice(2)
     }
     return label
   }
@@ -222,16 +361,55 @@ export default function InboxStatsPage() {
           <button
             key={opt.value}
             onClick={() => setPeriod(opt.value)}
-            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-              period === opt.value
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-muted text-muted-foreground hover:bg-muted/80'
-            }`}
+            className={'rounded-md px-3 py-1.5 text-xs font-medium transition-colors ' + (period === opt.value ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80')}
           >
             {opt.label}
           </button>
         ))}
       </div>
+
+      <div className="mb-6 flex gap-1.5 flex-wrap">
+        {([
+          { value: 'all' as const, label: 'Todos', color: 'bg-muted text-muted-foreground' },
+          { value: 'whatsapp' as const, label: 'WhatsApp', color: 'bg-emerald-500/10 text-emerald-700' },
+          { value: 'instagram' as const, label: 'Instagram', color: 'bg-pink-500/10 text-pink-700' },
+          { value: 'messenger' as const, label: 'Messenger', color: 'bg-blue-500/10 text-blue-700' },
+          { value: 'telegram' as const, label: 'Telegram', color: 'bg-sky-500/10 text-sky-700' },
+          { value: 'webchat' as const, label: 'Webchat', color: 'bg-violet-500/10 text-violet-700' },
+          { value: 'linkedin' as const, label: 'LinkedIn', color: 'bg-blue-600/10 text-blue-700' },
+          { value: 'tiktok' as const, label: 'TikTok', color: 'bg-black/10 text-black' },
+          { value: 'youtube' as const, label: 'YouTube', color: 'bg-red-500/10 text-red-700' },
+        ]).map((opt) => (
+          <button
+            key={opt.value}
+            onClick={() => setChannelFilter(opt.value)}
+            className={'rounded-md px-3 py-1.5 text-xs font-medium transition-colors ' + (channelFilter === opt.value ? 'bg-primary text-primary-foreground' : opt.color + ' hover:opacity-80')}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      {channelFilter === 'whatsapp' && whatsappChannels.length > 1 && (
+        <div className="mb-4 flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">Canal:</span>
+          <div className="relative">
+            <select
+              value={selectedWhatsappChannel}
+              onChange={(e) => setSelectedWhatsappChannel(e.target.value)}
+              className="appearance-none rounded-md border border-border bg-card pl-3 pr-8 py-1.5 text-xs font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
+            >
+              <option value="all">Todos os canais</option>
+              {whatsappChannels.map((ch) => (
+                <option key={ch.id} value={ch.id}>
+                  {ch.name}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          </div>
+        </div>
+      )}
 
       <div className="mb-6 grid grid-cols-3 gap-3">
         <Card className="p-3">
@@ -261,7 +439,6 @@ export default function InboxStatsPage() {
       </div>
 
       <div className="flex flex-1 gap-4 overflow-hidden">
-        {/* Table */}
         <div className="flex-1 overflow-auto">
           {loading ? (
             <div className="space-y-2">
@@ -278,6 +455,7 @@ export default function InboxStatsPage() {
               <thead>
                 <tr className="border-b border-border text-muted-foreground">
                   <th className="pb-2 text-left font-medium">Periodo</th>
+                  <th className="pb-2 text-left font-medium">Canal</th>
                   <th className="pb-2 text-right font-medium">Total</th>
                   <th className="pb-2 text-right font-medium">Nao lidas</th>
                   <th className="pb-2 text-right font-medium">Lidas</th>
@@ -285,30 +463,21 @@ export default function InboxStatsPage() {
                 </tr>
               </thead>
               <tbody>
-                {stats.map((row) => (
+                {stats.map((row, i) => (
                   <tr
-                    key={row.label}
+                    key={row.phone + row.label + i}
                     onClick={() => handleRowClick(row)}
-                    className={`border-b border-border/50 transition-colors ${
-                      row.unread > 0
-                        ? 'cursor-pointer hover:bg-muted/50'
-                        : 'cursor-default'
-                    }`}
+                    className={'border-b border-border/50 transition-colors ' + (row.unread > 0 ? 'cursor-pointer hover:bg-muted/50' : 'cursor-default')}
                   >
                     <td className="py-2 text-left text-muted-foreground">{formatLabel(row.label)}</td>
+                    <td className="py-2 text-left font-medium">{row.phone}</td>
                     <td className="py-2 text-right font-medium">{row.total}</td>
                     <td className="py-2 text-right">
-                      <span className={`${row.unread > 0 ? 'text-amber-500 cursor-pointer underline decoration-dotted underline-offset-2' : ''}`}>
-                        {row.unread}
-                      </span>
+                      <span className={row.unread > 0 ? 'text-amber-500 cursor-pointer underline decoration-dotted underline-offset-2' : ''}>{row.unread}</span>
                     </td>
                     <td className="py-2 text-right text-emerald-500">{row.total - row.unread}</td>
                     <td className="py-2 text-right">
-                      <span className={`rounded px-1.5 py-0.5 text-[10px] ${
-                        row.readRate >= 80 ? 'bg-emerald-500/10 text-emerald-500' :
-                        row.readRate >= 50 ? 'bg-amber-500/10 text-amber-500' :
-                        'bg-red-500/10 text-red-500'
-                      }`}>
+                      <span className={'rounded px-1.5 py-0.5 text-[10px] ' + (row.readRate >= 80 ? 'bg-emerald-500/10 text-emerald-500' : row.readRate >= 50 ? 'bg-amber-500/10 text-amber-500' : 'bg-red-500/10 text-red-500')}>
                         {row.readRate}%
                       </span>
                     </td>
@@ -319,7 +488,6 @@ export default function InboxStatsPage() {
           )}
         </div>
 
-        {/* Drill-down panel */}
         {drillDown && (
           <div className="w-72 shrink-0 overflow-auto rounded-lg border border-border bg-card">
             <div className="flex items-center justify-between border-b border-border px-3 py-2">

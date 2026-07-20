@@ -123,6 +123,24 @@ export function InternalChat() {
     applyTransform(dragOffset.x, dragOffset.y);
   }, [dragOffset]);
 
+  useEffect(() => {
+    const handleOpenChat = (e: Event) => {
+      const customEvent = e as CustomEvent<{ conversationId?: string; userId?: string }>;
+      setIsOpen(true);
+      if (customEvent.detail?.conversationId) {
+        const conv = conversations.find(c => c.id === customEvent.detail.conversationId);
+        if (conv) {
+          setActiveConversation(conv);
+          markAsRead(conv.id);
+        }
+      } else if (customEvent.detail?.userId) {
+        getOrCreateConversation(customEvent.detail.userId);
+      }
+    };
+    window.addEventListener('open-internal-chat', handleOpenChat);
+    return () => window.removeEventListener('open-internal-chat', handleOpenChat);
+  }, [conversations, getOrCreateConversation, setActiveConversation, markAsRead]);
+
   // Attach pointerdown on the button via native listener
   useEffect(() => {
     const btn = btnRef.current;
@@ -664,8 +682,8 @@ export function InternalChat() {
                           {emp.status === "online" ? "Online" : emp.status === "away" ? "Ausente" : emp.last_seen_at ? "Visto em " + formatTime(emp.last_seen_at) : "Offline"}
                         </p>
                       </div>
-                      <span className={cn("shrink-0 text-[10px] font-medium", emp.role === "owner" ? "text-amber-400" : emp.role === "admin" ? "text-primary" : "text-muted-foreground")}>
-                        {emp.role === "owner" ? "Proprietário" : emp.role === "admin" ? "Admin" : "Agente"}
+                      <span className={cn("shrink-0 text-[10px] font-medium", emp.role === "owner" ? "text-amber-400" : emp.role === "admin" ? "text-primary" : emp.role === "vistoria" ? "text-sky-400" : "text-muted-foreground")}>
+                        {emp.role === "owner" ? "Proprietário" : emp.role === "admin" ? "Admin" : emp.role === "vistoria" ? "Vistoria" : "Agente"}
                       </span>
                     </button>
                   ))

@@ -29,6 +29,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useCan } from "@/hooks/use-can";
+import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
@@ -47,7 +48,24 @@ export const CHAT_MEDIA_BUCKET = "chat-media";
 /** Meta caps media captions at 1024 chars. Enforced here and in the send route. */
 export const MEDIA_CAPTION_MAX = 1024;
 
-const QUICK_REPLIES = [
+type QuickReply = {
+  id: string;
+  label: string;
+  text?: string;
+  action?: "send_catalog";
+};
+
+const QUICK_REPLIES: QuickReply[] = [
+  {
+    id: "enviar-catalogo",
+    label: "Enviar catálogo",
+    action: "send_catalog",
+  },
+  {
+    id: "boas-vindas",
+    label: "Boas-vindas",
+    text: "Olá! Meu nome é {{nome}} e vou dar continuidade ao seu atendimento.\n\nPara prosseguirmos, pode me informar os endereços de origem e destino da mudança, bem como a data prevista para a realização do serviço?",
+  },
   {
     id: "orcamento-residencial",
     label: "Orçamento residencial",
@@ -73,7 +91,7 @@ const QUICK_REPLIES = [
     label: "Prazos e agendamento",
     text: "Os prazos da MDJS Mudanças variam conforme a complexidade: ⏱️\n\n✅ Mudanças locais (SP): agendamento em até 48h\n✅ Mudanças interestaduais: agendamento conforme rota\n✅ Serviço de guarda-móveis: imediato (consulte disponibilidade)\n\n📌 O prazo total (coleta + transporte + entrega) é definido após a vistoria técnica, garantindo um cronograma realista.\n\nAgende uma vistoria gratuita sem compromisso! 🚛✅",
   },
-  {
+{
     id: "servicos-oferecidos",
     label: "Serviços oferecidos",
     text: "A MDJS Mudanças oferece soluções completas! 🏠🚚\n\n1️⃣ 🏡 Mudanças Residenciais\n2️⃣ 🏢 Mudanças Comerciais\n3️⃣ 🌎 Mudanças Interestaduais\n4️⃣ 📦 Guarda-móveis (Self-Storage) com monitoramento 24h\n5️⃣ 🪜 Içamento de móveis para andares superiores\n6️⃣ 📋 Desmontagem e montagem de móveis\n7️⃣ 🛡️ Embalagens de proteção (plástico bolha, mantas, caixas reforçadas)\n\n✅ Equipe treinada\n✅ Caminhões baú com monitoramento\n✅ Mais de 12 anos de experiência\n✅ Atendimento em todo Brasil\n\nSolicite seu orçamento gratuito! 📞 (11) 3926-2010",
@@ -156,6 +174,7 @@ export function MessageComposer({
 }: MessageComposerProps) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const { profile } = useAuth();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [showQuickReplies, setShowQuickReplies] = useState(false);
   const [quickFilter, setQuickFilter] = useState("");
@@ -273,21 +292,54 @@ export function MessageComposer({
     [adjustHeight]
   );
 
-  const filteredQuickReplies = QUICK_REPLIES.filter((qr) =>
+  const filteredQuickReplies: QuickReply[] = QUICK_REPLIES.filter((qr) =>
     qr.label.toLowerCase().includes(quickFilter.toLowerCase())
   );
 
+  const sendCatalog = useCallback(async () => {
+    setBusy(true);
+    try {
+      const res = await fetch("/catalogo.pdf");
+      if (!res.ok) throw new Error("Failed to fetch catalog PDF");
+      const blob = await res.blob();
+      const file = new File([blob], "catalogo.pdf", { type: "application/pdf" });
+      const { publicUrl, path } = await uploadAccountMedia(CHAT_MEDIA_BUCKET, file);
+      onSendMedia({
+        kind: "document",
+        mediaUrl: publicUrl,
+        path,
+        filename: "catalogo.pdf",
+        replyToId: replyTo?.id,
+      });
+      toast.success("Catálogo enviado!");
+    } catch (err) {
+      console.error("sendCatalog error:", err);
+      toast.error("Erro ao enviar catálogo");
+    } finally {
+      setBusy(false);
+    }
+  }, [onSendMedia, replyTo?.id]);
+
   const handleSelectQuickReply = useCallback(
-    (replyText: string) => {
+    (reply: QuickReply) => {
+      if (reply.action === "send_catalog") {
+        void sendCatalog();
+        setShowQuickReplies(false);
+        setQuickFilter("");
+        return;
+      }
+      const replyText = reply.text || "";
       const slashIdx = text.lastIndexOf("/");
       const prefix = slashIdx !== -1 ? text.slice(0, slashIdx) : "";
-      setText(prefix + replyText);
+      const agentName = profile?.full_name || profile?.email?.split("@")[0] || "Agente";
+      const resolved = replyText.replace(/\{\{nome\}\}/g, agentName);
+      setText(prefix + resolved);
       setShowQuickReplies(false);
       setQuickFilter("");
       adjustHeight();
       textareaRef.current?.focus();
     },
-    [text, adjustHeight]
+    [text, adjustHeight, profile, sendCatalog]
   );
 
   // Upload a captured file to chat-media and stage it as a draft.
@@ -578,17 +630,7 @@ export function MessageComposer({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <GatedButton
-            variant="ghost"
-            size="sm"
-            canAct={!readOnly}
-            gateReason="send messages"
-            title={readOnly ? undefined : "Enviar modelo"}
-            className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-foreground"
-            onClick={onOpenTemplates}
-          >
-            <LayoutTemplate className="h-4 w-4" />
-          </GatedButton>
+
 
           <div className="relative flex-1">
             {showQuickReplies && filteredQuickReplies.length > 0 && (
@@ -602,7 +644,7 @@ export function MessageComposer({
                     <button
                       key={qr.id}
                       type="button"
-                      onClick={() => handleSelectQuickReply(qr.text)}
+                      onClick={() => handleSelectQuickReply(qr)}
                       className="w-full px-3 py-2 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors border-b border-border/50 last:border-0"
                     >
                       <span className="font-medium text-foreground">{qr.label}</span>
@@ -621,7 +663,7 @@ export function MessageComposer({
                   ? "Somente leitura — visualizadores podem ver mas não responder"
                   : sessionExpired
                     ? "Sessão expirada - use um modelo"
-                    : "Digite uma mensagem... (Shift+Enter para nova linha)"
+                    : "Digite uma mensagem…"
               }
               disabled={sessionExpired || readOnly}
               rows={1}
@@ -635,6 +677,18 @@ export function MessageComposer({
               )}
             />
           </div>
+
+          <GatedButton
+            variant="ghost"
+            size="sm"
+            canAct={!readOnly}
+            gateReason="send messages"
+            title={readOnly ? undefined : "Enviar modelo"}
+            className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+            onClick={onOpenTemplates}
+          >
+            <LayoutTemplate className="h-4 w-4" />
+          </GatedButton>
 
           <button
             type="button"
@@ -657,15 +711,6 @@ export function MessageComposer({
             <Send className="h-4 w-4" />
           </GatedButton>
         </div>
-      )}
-
-      {/* Hint sits outside the flex row so its height doesn't push
-          `items-end` buttons below the textarea. Indented to line up
-          under the textarea left edge. */}
-      {!draft && !recording && (
-        <p className="mt-1 pl-[5.5rem] text-[10px] text-muted-foreground">
-          Digite &apos;/&apos; para respostas rápidas
-        </p>
       )}
     </div>
   );
@@ -694,7 +739,7 @@ function MediaDraftPreview({
 }) {
   return (
     <div className="rounded-xl border border-border bg-muted/40 p-3">
-      <div className="flex items-start gap-3">
+      <div className="flex items-center gap-3">
         <div className="min-w-0 flex-1">
           {draft.kind === "image" && (
             // eslint-disable-next-line @next/next/no-img-element
@@ -708,7 +753,20 @@ function MediaDraftPreview({
             <video src={draft.mediaUrl} controls className="max-h-40 rounded-lg" />
           )}
           {draft.kind === "audio" && (
-            <audio src={draft.mediaUrl} controls className="w-full" />
+            <div className="flex w-full items-center justify-center gap-3">
+              <audio src={draft.mediaUrl} controls className="flex-1" />
+              <GatedButton
+                size="sm"
+                canAct={!readOnly}
+                gateReason="send messages"
+                disabled={busy}
+                onClick={onSend}
+                className="h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
+                title="Enviar audio"
+              >
+                <Send className="h-4 w-4" />
+              </GatedButton>
+            </div>
           )}
           {draft.kind === "document" && (
             <div className="flex items-center gap-2 text-sm text-foreground">
@@ -717,18 +775,20 @@ function MediaDraftPreview({
             </div>
           )}
         </div>
-        <button
-          type="button"
-          onClick={onDiscard}
-          aria-label="Remover anexo"
-          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-        >
-          <X className="h-4 w-4" />
-        </button>
+        {draft.kind !== "audio" && (
+          <button
+            type="button"
+            onClick={onDiscard}
+            aria-label="Remover anexo"
+            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
-      <div className="mt-2 flex items-end gap-2">
-        {draft.kind !== "audio" && (
+      {draft.kind !== "audio" && (
+        <div className="mt-2 flex items-end gap-2">
           <input
             value={draft.caption}
             maxLength={MEDIA_CAPTION_MAX}
@@ -742,21 +802,18 @@ function MediaDraftPreview({
             placeholder="Adicionar legenda…"
             className="flex-1 rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50"
           />
-        )}
-        <GatedButton
-          size="sm"
-          canAct={!readOnly}
-          gateReason="send messages"
-          disabled={busy}
-          onClick={onSend}
-          className={cn(
-            "h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40",
-            draft.kind === "audio" && "ml-auto",
-          )}
-        >
-          <Send className="h-4 w-4" />
-        </GatedButton>
-      </div>
+          <GatedButton
+            size="sm"
+            canAct={!readOnly}
+            gateReason="send messages"
+            disabled={busy}
+            onClick={onSend}
+            className="h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
+          >
+            <Send className="h-4 w-4" />
+          </GatedButton>
+        </div>
+      )}
     </div>
   );
 }

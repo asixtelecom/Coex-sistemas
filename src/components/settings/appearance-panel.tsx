@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Check, Contrast, Loader2, Moon, Palette, SunMoon, Sun, Upload, Trash2, Building2, FileText, MapPin, CreditCard, Phone, Pencil } from "lucide-react";
+import { Check, Contrast, Loader2, Moon, Palette, SunMoon, Sun, Upload, Trash2, Building2, FileText, MapPin, CreditCard, Phone, Pencil, MessageCircle } from "lucide-react";
 
 import { useTheme } from "@/hooks/use-theme";
 import { useAuth } from "@/hooks/use-auth";
@@ -402,8 +402,8 @@ function ModeCard({
   isActive: boolean;
   onPick: () => void;
 }) {
-  const Icon = mode === "light" ? Sun : mode === "graphite" ? Contrast : Moon;
-  const label = mode === "graphite" ? "Grafite" : mode;
+  const Icon = mode === "light" ? Sun : mode === "graphite" ? Contrast : mode === "lite" ? SunMoon : mode === "whatsapp" ? MessageCircle : Moon;
+  const label = mode === "graphite" ? "Grafite" : mode === "lite" ? "Lite" : mode === "whatsapp" ? "WhatsApp" : mode;
   return (
     <button
       type="button"

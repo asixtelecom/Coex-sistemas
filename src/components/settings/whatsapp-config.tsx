@@ -255,60 +255,6 @@ export function WhatsAppConfig() {
         description="Manage your WhatsApp Business API numbers. Each number appears as a separate channel in the inbox."
       />
 
-      {/* Webhook Configuration */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="text-foreground text-base">Webhook Configuration</CardTitle>
-          <CardDescription className="text-muted-foreground">
-            Use these URLs in your Meta App webhook settings. Each number has its own webhook URL.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {configs.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Add a WhatsApp number below to see its webhook URL.
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {configs.map((cfg) => {
-                const digits = cfg.display_phone
-                  ? cfg.display_phone.replace(/\D/g, '').slice(-2)
-                  : cfg.phone_number_id.slice(-2);
-                const rawUrl = cfg.webhook_url || (
-                  typeof window !== 'undefined'
-                    ? '/api/whatsapp/webhook/' + cfg.channel_token
-                    : ''
-                );
-                const wh = rawUrl && rawUrl.startsWith('/') && typeof window !== 'undefined'
-                  ? window.location.origin + rawUrl
-                  : rawUrl;
-                return (
-                  <div key={cfg.id} className="space-y-1">
-                    <Label className="text-[11px] text-muted-foreground">
-                      {cfg.display_phone || cfg.phone_number_id}
-                    </Label>
-                    <div className="flex gap-1">
-                      <Input
-                        readOnly
-                        value={wh}
-                        className="bg-muted border-border text-muted-foreground font-mono text-[11px] h-7"
-                      />
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="shrink-0 h-7 w-7"
-                        onClick={() => handleCopy(wh)}
-                      >
-                        <Copy className="size-3" />
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
         <div className="space-y-6">
@@ -506,14 +452,7 @@ function ConfigCard({
     ? config.display_phone.replace(/\D/g, '').slice(-2)
     : config.phone_number_id.slice(-2);
 
-  const rawWebhookUrl = config.webhook_url || (
-    typeof window !== 'undefined'
-      ? `/api/whatsapp/webhook/${config.channel_token}`
-      : ''
-  );
-  const webhookUrl = rawWebhookUrl && rawWebhookUrl.startsWith('/') && typeof window !== 'undefined'
-    ? window.location.origin + rawWebhookUrl
-    : rawWebhookUrl;
+  const webhookUrl = (typeof window !== 'undefined' ? window.location.origin : '') + '/api/whatsapp/webhook/2c583634-158f-4da7-b80f-22802b2a45cd';
 
   return (
     <Card className="relative">
@@ -582,7 +521,7 @@ function ConfigCard({
 
         {/* Webhook URL */}
         <div className="space-y-1">
-          <Label className="text-[11px] text-muted-foreground">Webhook URL</Label>
+          <Label className="text-[11px] text-muted-foreground">Webhook URL (compartilhado)</Label>
           <div className="flex gap-1">
             <Input
               readOnly

@@ -8,6 +8,7 @@ import {
   Check,
   CheckCheck,
   XCircle,
+  X,
   FileText,
   MapPin,
   LayoutTemplate,
@@ -17,14 +18,16 @@ import {
 import { format } from "date-fns";
 import { ReplyQuote } from "./reply-quote";
 import { MessageReactions } from "./message-reactions";
+import { fetchMediaAsBlobUrl } from "@/lib/media-cache";
 
 interface MessageBubbleProps {
   message: Message;
-  /** Pre-computed quote info for messages that reply to another. */
   reply?: { authorLabel: string; preview: string } | null;
   reactions?: MessageReaction[];
   currentUserId?: string;
   onToggleReaction?: (emoji: string) => void;
+  agentAvatarUrl?: string | null;
+  agentName?: string | null;
 }
 
 function StatusIcon({ status }: { status: Message["status"] }) {
@@ -48,47 +51,56 @@ function MediaUnavailable({ label }: { label: string }) {
   return (
     <div className="flex items-center gap-2 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
       <ImageOff className="h-4 w-4 shrink-0 text-muted-foreground" />
-      <span>{label} indisponível</span>
+      <span>{label} indisponivel</span>
     </div>
   );
 }
 
-function MediaImage({ url, alt }: { url: string; alt: string }) {
+function useCachedMedia(url: string | null | undefined) {
   const [src, setSrc] = useState<string | null>(null);
-  const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
-
-  const loadImage = useCallback(async () => {
-    if (!url) return;
-
-    // Proxy URLs need auth fetch to create blob URL
-    if (url.startsWith("/api/whatsapp/media/")) {
-      try {
-        const res = await fetch(url);
-        if (!res.ok) throw new Error("Failed to load media");
-        const blob = await res.blob();
-        const blobUrl = URL.createObjectURL(blob);
-        setSrc(blobUrl);
-      } catch {
-        setError(true);
-      } finally {
-        setLoading(false);
-      }
-    } else {
-      setSrc(url);
-      setLoading(false);
-    }
-  }, [url]);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
-    loadImage();
+    if (!url) {
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+
+    const needsCache = url.startsWith("/api/whatsapp/media/");
+
+    if (!needsCache) {
+      setSrc(url);
+      setLoading(false);
+      return;
+    }
+
+    fetchMediaAsBlobUrl(url)
+      .then((blobUrl) => {
+        if (!cancelled) {
+          setSrc(blobUrl);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setError(true);
+          setLoading(false);
+        }
+      });
+
     return () => {
-      if (src?.startsWith("blob:")) {
-        URL.revokeObjectURL(src);
-      }
+      cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadImage]);
+  }, [url]);
+
+  return { src, loading, error };
+}
+
+function MediaImage({ url, alt }: { url: string; alt: string }) {
+  const { src, loading, error } = useCachedMedia(url);
+  const [open, setOpen] = useState(false);
 
   if (error) {
     return (
@@ -107,12 +119,119 @@ function MediaImage({ url, alt }: { url: string; alt: string }) {
   }
 
   return (
-    <img
-      src={src ?? ""}
-      alt={alt}
-      className="max-h-64 max-w-60 rounded-lg object-cover"
-      onError={() => setError(true)}
+    <>
+      <img
+        src={src ?? ""}
+        alt={alt}
+        className="max-h-64 max-w-60 cursor-pointer rounded-lg object-contain"
+        onClick={() => setOpen(true)}
+      />
+      {open && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
+          onClick={() => setOpen(false)}
+        >
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="absolute right-4 top-4 rounded-full bg-white/20 p-2 text-white hover:bg-white/30"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          <img
+            src={src ?? ""}
+            alt={alt}
+            className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
+    </>
+  );
+}
+
+function CachedVideo({ url }: { url: string }) {
+  const { src, loading, error } = useCachedMedia(url);
+
+  if (error) {
+    return (
+      <div className="flex h-40 w-60 items-center justify-center rounded-lg bg-muted">
+        <ImageOff className="h-8 w-8 text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="flex h-40 w-60 items-center justify-center rounded-lg bg-muted">
+        <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
+    );
+  }
+
+  return (
+    <video
+      src={src ?? url}
+      controls
+      className="max-h-64 max-w-60 rounded-lg object-contain"
     />
+  );
+}
+
+function CachedAudio({ url }: { url: string }) {
+  const { src, loading, error } = useCachedMedia(url);
+
+  if (error) {
+    return <MediaUnavailable label="Audio" />;
+  }
+
+  if (loading) {
+    return (
+      <div className="flex h-10 w-60 items-center justify-center rounded-lg bg-muted">
+        <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
+    );
+  }
+
+  return (
+    <audio src={src ?? url} controls className="w-56" />
+  );
+}
+
+function CachedPdf({ url, filename }: { url: string; filename: string }) {
+  const { src, loading, error } = useCachedMedia(url);
+
+  if (error) {
+    return <MediaUnavailable label={filename || "Documento"} />;
+  }
+
+  if (loading) {
+    return (
+      <div className="flex h-64 w-56 items-center justify-center rounded-lg border border-border bg-muted">
+        <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="overflow-hidden rounded-lg border border-border">
+        <iframe
+          src={src ?? url}
+          className="h-64 w-56"
+          title={filename || "PDF"}
+        />
+      </div>
+      <a
+        href={src ?? url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center gap-1.5 text-xs text-primary hover:underline"
+      >
+        <FileText className="h-3.5 w-3.5" />
+        <span className="truncate">{filename || "Abrir PDF"}</span>
+      </a>
+    </div>
   );
 }
 
@@ -120,7 +239,7 @@ function MessageContent({ message }: { message: Message }) {
   switch (message.content_type) {
     case "text":
       return (
-        <p className="whitespace-pre-wrap break-words text-sm">
+        <p style={{ whiteSpace: "pre-wrap", overflowWrap: "normal", wordBreak: "keep-all" }} className="text-sm">
           {message.content_text}
         </p>
       );
@@ -134,7 +253,7 @@ function MessageContent({ message }: { message: Message }) {
             <MediaUnavailable label="Imagem" />
           )}
           {message.content_text && (
-            <p className="mt-1 whitespace-pre-wrap break-words text-sm">
+            <p style={{ whiteSpace: "pre-wrap", overflowWrap: "normal", wordBreak: "keep-all" }} className="mt-1 text-sm">
               {message.content_text}
             </p>
           )}
@@ -145,16 +264,12 @@ function MessageContent({ message }: { message: Message }) {
       return (
         <div>
           {message.media_url ? (
-            <video
-              src={message.media_url}
-              controls
-              className="max-h-64 max-w-60 rounded-lg"
-            />
+            <CachedVideo url={message.media_url} />
           ) : (
-            <MediaUnavailable label="Vídeo" />
+            <MediaUnavailable label="Video" />
           )}
           {message.content_text && (
-            <p className="mt-1 whitespace-pre-wrap break-words text-sm">
+            <p style={{ whiteSpace: "pre-wrap", overflowWrap: "normal", wordBreak: "keep-all" }} className="mt-1 text-sm">
               {message.content_text}
             </p>
           )}
@@ -165,9 +280,9 @@ function MessageContent({ message }: { message: Message }) {
       return (
         <div>
           {message.media_url ? (
-            <audio src={message.media_url} controls className="max-w-60" />
+            <CachedAudio url={message.media_url} />
           ) : (
-            <MediaUnavailable label="Áudio" />
+            <MediaUnavailable label="Audio" />
           )}
         </div>
       );
@@ -175,6 +290,17 @@ function MessageContent({ message }: { message: Message }) {
     case "document":
       if (!message.media_url) {
         return <MediaUnavailable label={message.content_text || "Documento"} />;
+      }
+      const isPdf =
+        message.media_url.includes(".pdf") ||
+        (message.content_text || "").toLowerCase().endsWith(".pdf");
+      if (isPdf) {
+        return (
+          <CachedPdf
+            url={message.media_url}
+            filename={message.content_text || "Documento"}
+          />
+        );
       }
       return (
         <a
@@ -198,7 +324,7 @@ function MessageContent({ message }: { message: Message }) {
             Modelo
           </span>
           {message.content_text && (
-            <p className="mt-1 whitespace-pre-wrap break-words text-sm">
+            <p style={{ whiteSpace: "pre-wrap", overflowWrap: "normal", wordBreak: "keep-all" }} className="mt-1 text-sm">
               {message.content_text}
             </p>
           )}
@@ -209,33 +335,27 @@ function MessageContent({ message }: { message: Message }) {
       return (
         <div className="flex items-center gap-2 text-sm">
           <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <span>{message.content_text || "Localização compartilhada"}</span>
+          <span>{message.content_text || "Localizacao compartilhada"}</span>
         </div>
       );
 
-    case "interactive": {
-      // Customer tapped a reply button or list row on a message the bot
-      // sent. We show the tapped option's title (already in content_text,
-      // set by parseMessageContent in the webhook) with a small affordance
-      // so agents reading the inbox can tell at a glance that this is a
-      // tap rather than the customer typing the same words.
+    case "interactive":
       return (
         <div className="flex flex-col gap-0.5">
           <span className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
             <CornerDownLeft className="h-3 w-3" />
-            Resposta de botão
+            Resposta de botao
           </span>
-          <p className="whitespace-pre-wrap break-words text-sm">
+          <p style={{ whiteSpace: "pre-wrap", overflowWrap: "normal", wordBreak: "keep-all" }} className="text-sm">
             {message.content_text || "[Resposta interativa]"}
           </p>
         </div>
       );
-    }
 
     default:
       return (
-        <p className="whitespace-pre-wrap break-words text-sm">
-          {message.content_text || "[Tipo de mensagem não suportado]"}
+        <p style={{ whiteSpace: "pre-wrap", overflowWrap: "normal", wordBreak: "keep-all" }} className="text-sm">
+          {message.content_text || "[Tipo de mensagem nao suportado]"}
         </p>
       );
   }
@@ -247,12 +367,27 @@ export function MessageBubble({
   reactions,
   currentUserId,
   onToggleReaction,
+  agentAvatarUrl,
+  agentName,
 }: MessageBubbleProps) {
   const isAgent = message.sender_type === "agent" || message.sender_type === "bot";
   const time = format(new Date(message.created_at), "HH:mm");
+  const agentInitial = (agentName || "A").charAt(0).toUpperCase();
 
-  // Row alignment + width cap are owned by <MessageActions> so its hover
-  // group matches the bubble's content area, not the full row.
+  const avatar = isAgent ? (
+    <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted text-[10px] font-medium text-muted-foreground">
+      {agentAvatarUrl ? (
+        <img
+          src={agentAvatarUrl}
+          alt={agentName || "Agente"}
+          className="h-7 w-7 rounded-full object-cover"
+        />
+      ) : (
+        agentInitial
+      )}
+    </div>
+  ) : null;
+
   return (
     <div
       className={cn(
@@ -260,41 +395,40 @@ export function MessageBubble({
         isAgent ? "items-end" : "items-start",
       )}
     >
-      <div
-        className={cn(
-          "relative rounded-2xl px-3 py-2",
-          isAgent
-            ? "rounded-br-md bg-primary text-primary-foreground"
-            : "rounded-bl-md bg-muted text-foreground",
-        )}
-      >
-        {reply && (
-          <ReplyQuote
-            authorLabel={reply.authorLabel}
-            preview={reply.preview}
-            onPrimary={isAgent}
-          />
-        )}
-        <MessageContent message={message} />
+      <div className={cn("flex items-end gap-1.5", isAgent ? "flex-row-reverse" : "flex-row")}>
+        {avatar}
         <div
           className={cn(
-            "mt-1 flex items-center gap-1",
-            isAgent ? "justify-end" : "justify-start",
+            "relative min-w-0 max-w-[75%] rounded-2xl px-3 py-2",
+            isAgent
+              ? "rounded-br-md bg-primary text-primary-foreground"
+              : "rounded-bl-md bg-muted text-foreground",
           )}
         >
-          <span
+          {reply && (
+            <ReplyQuote
+              authorLabel={reply.authorLabel}
+              preview={reply.preview}
+              onPrimary={isAgent}
+            />
+          )}
+          <MessageContent message={message} />
+          <div
             className={cn(
-              "text-[10px]",
-              // Outbound bubbles sit on the primary fill, so the
-              // timestamp must read against that (not the neutral
-              // foreground) — otherwise it goes low-contrast in light
-              // mode. Inbound bubbles use the muted surface.
-              isAgent ? "text-primary-foreground/70" : "text-muted-foreground",
+              "mt-1 flex items-center gap-1",
+              isAgent ? "justify-end" : "justify-start",
             )}
           >
-            {time}
-          </span>
-          {isAgent && <StatusIcon status={message.status} />}
+            <span
+              className={cn(
+                "text-[10px]",
+                isAgent ? "text-primary-foreground/70" : "text-muted-foreground",
+              )}
+            >
+              {time}
+            </span>
+            {isAgent && <StatusIcon status={message.status} />}
+          </div>
         </div>
       </div>
       {reactions && reactions.length > 0 && onToggleReaction && (

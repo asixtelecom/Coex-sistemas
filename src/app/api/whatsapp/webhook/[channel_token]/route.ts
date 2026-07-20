@@ -110,9 +110,20 @@ export async function POST(
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const { channel_token } = await params
+  // channel_token shared across all numbers — identify by phone_number_id
+  const firstEntry = body.entry?.[0] as
+    | { changes?: Array<Record<string, unknown>> }
+    | undefined
+  const firstChange = firstEntry?.changes?.[0] as
+    | { value?: { metadata?: { phone_number_id?: string } } }
+    | undefined
+  const phoneNumberId = firstChange?.value?.metadata?.phone_number_id
+  if (!phoneNumberId) {
+    console.error('[webhook/token] no phone_number_id in payload')
+    return NextResponse.json({ error: 'Missing phone_number_id' }, { status: 400 })
+  }
 
-  processTokenWebhook(body, channel_token).catch((error) => {
+  processTokenWebhook(body, phoneNumberId).catch((error) => {
     console.error('Error processing token webhook:', error)
   })
 
@@ -121,20 +132,31 @@ export async function POST(
 
 async function processTokenWebhook(
   body: { entry?: Array<Record<string, unknown>> },
-  channelToken: string,
+  phoneNumberId: string,
 ) {
   if (!body.entry) return
 
-  const { data: config, error: configError } = await supabaseAdmin()
+  const { data: configRows, error: configError } = await supabaseAdmin()
     .from('whatsapp_config')
     .select('*')
-    .eq('channel_token', channelToken)
-    .maybeSingle()
+    .eq('phone_number_id', phoneNumberId)
 
-  if (configError || !config) {
-    console.error('No config found for channel_token:', channelToken, configError)
+  if (configError) {
+    console.error('Error fetching config for phone_number_id:', phoneNumberId, configError)
     return
   }
+
+  if (!configRows || configRows.length === 0) {
+    console.error('No config found for phone_number_id:', phoneNumberId)
+    return
+  }
+
+  if (configRows.length > 1) {
+    console.error('Multiple configs found for phone_number_id:', phoneNumberId)
+    return
+  }
+
+  const config = configRows[0]
 
   let channelId: string | undefined
   if (config.id) {

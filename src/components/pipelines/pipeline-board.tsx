@@ -152,6 +152,8 @@ export function PipelineBoard({
               currency={defaultCurrency}
               onAddDeal={onAddDeal}
               onEditDeal={onEditDeal}
+              onDealMoved={onDealMoved}
+              stages={sortedStages}
               searchQuery={searchQueries[stage.id] || ""}
               onSearchChange={(q) => setSearchQueries({ ...searchQueries, [stage.id]: q })}
               isSearching={searchingStageId === stage.id}
@@ -240,6 +242,8 @@ function StageColumn({
   currency,
   onAddDeal,
   onEditDeal,
+  onDealMoved,
+  stages,
   searchQuery,
   onSearchChange,
   isSearching,
@@ -252,6 +256,8 @@ function StageColumn({
   currency: string;
   onAddDeal: (stageId: string) => void;
   onEditDeal: (deal: Deal) => void;
+  onDealMoved: (dealId: string, newStageId: string) => void;
+  stages: PipelineStage[];
   searchQuery: string;
   onSearchChange: (q: string) => void;
   isSearching: boolean;
@@ -326,7 +332,7 @@ function StageColumn({
             : ""
         }`}
       >
-        {deals.length === 0 ? (
+          {deals.length === 0 ? (
           <div className="flex flex-1 items-center justify-center rounded-lg border-2 border-dashed border-border py-10 text-xs text-muted-foreground">
             Drop a deal here
           </div>
@@ -337,6 +343,8 @@ function StageColumn({
               deal={deal}
               stage={stage}
               onEdit={onEditDeal}
+              stages={stages}
+              onMoveStage={onDealMoved}
             />
           ))
         )}
@@ -359,10 +367,14 @@ function DraggableDealCard({
   deal,
   stage,
   onEdit,
+  stages,
+  onMoveStage,
 }: {
   deal: Deal;
   stage: PipelineStage;
   onEdit: (deal: Deal) => void;
+  stages: PipelineStage[];
+  onMoveStage: (dealId: string, newStageId: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: deal.id,
@@ -375,7 +387,7 @@ function DraggableDealCard({
       {...attributes}
       style={{ opacity: isDragging ? 0.3 : 1, touchAction: "none" }}
     >
-      <DealCard deal={deal} stage={stage} onEdit={onEdit} />
+      <DealCard deal={deal} stage={stage} onEdit={onEdit} stages={stages} onMoveStage={onMoveStage} />
     </div>
   );
 }

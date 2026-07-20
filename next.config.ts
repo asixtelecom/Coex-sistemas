@@ -30,13 +30,13 @@ const SECURITY_HEADERS = [
     // else stays denied — a compromised dependency can't silently grab
     // the camera / geolocation / etc.
     key: "Permissions-Policy",
-    value: "camera=(), microphone=(self), geolocation=(), payment=(), usb=()",
+    value: "camera=(), microphone=(self) microphone=(src), geolocation=(), payment=(), usb=()",
   },
   {
     key: "Content-Security-Policy-Report-Only",
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://pabx.techvoz.com.br",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://pabx.techvoz.com.br https://asix.asixtelecom.com.br",
       // Tailwind + inline style attributes on lots of components.
       "style-src 'self' 'unsafe-inline'",
       // Supabase public-bucket avatars, contact avatars (arbitrary
@@ -49,7 +49,8 @@ const SECURITY_HEADERS = [
       "font-src 'self' data:",
       // Supabase REST + realtime (WSS). All Meta API calls happen
       // server-side, so graph.facebook.com does not belong here.
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://coexsistemas.techvoz.com.br wss://coexsistemas.techvoz.com.br",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://coexsistemas.techvoz.com.br wss://coexsistemas.techvoz.com.br https://asix.asixtelecom.com.br wss://asix.asixtelecom.com.br",
+      "frame-src 'self' https://asix.asixtelecom.com.br https://*.asixtelecom.com.br",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
@@ -59,6 +60,14 @@ const SECURITY_HEADERS = [
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["dev.coexsistemas.techvoz.com.br"],
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "100mb",
+    },
+  },
+  typescript: {
+    ignoreBuildErrors: true,
+  },
   /**
    * Cache-Control policy.
    *

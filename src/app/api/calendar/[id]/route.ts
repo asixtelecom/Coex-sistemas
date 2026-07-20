@@ -1,6 +1,17 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextRequest, NextResponse } from "next/server"
 
+async function getProfile(supabase: Awaited<ReturnType<typeof createClient>>) {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
+  const { data } = await supabase
+    .from("profiles")
+    .select("account_role")
+    .eq("user_id", user.id)
+    .single()
+  return data as { account_role: string } | null
+}
+
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -8,6 +19,11 @@ export async function PATCH(
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 })
+
+  const profile = await getProfile(supabase)
+  if (profile?.account_role === "viewer" || profile?.account_role === "vistoria") {
+    return NextResponse.json({ error: "Sem permissão para editar eventos" }, { status: 403 })
+  }
 
   const { id } = await params
   const body = await req.json()
@@ -40,6 +56,11 @@ export async function DELETE(
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: "Não autenticado" }, { status: 401 })
+
+  const profile = await getProfile(supabase)
+  if (profile?.account_role === "viewer" || profile?.account_role === "vistoria") {
+    return NextResponse.json({ error: "Sem permissão para excluir eventos" }, { status: 403 })
+  }
 
   const { id } = await params
 

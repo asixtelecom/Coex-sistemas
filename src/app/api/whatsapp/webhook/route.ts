@@ -875,6 +875,73 @@ interface ContactOutcome {
   wasCreated: boolean
 }
 
+async function fetchAndSaveAvatar(contactId: string, phone: string) {
+  try {
+    const EVOLUTION_API_URL = 'http://localhost:8080'
+    const EVOLUTION_API_KEY = 'd1c5f40478803e0a1135907a90b559dc94d8b3c4392acc1539b9c2650d32c71b'
+
+    const instResponse = await fetch(`${EVOLUTION_API_URL}/instance/fetchInstances`, {
+      headers: { apikey: EVOLUTION_API_KEY },
+    })
+
+    if (!instResponse.ok) {
+      console.warn(`[avatar-sync] Failed to fetch evolution instances: ${instResponse.statusText}`)
+      return
+    }
+
+    const instances = (await instResponse.json()) as Array<{
+      connectionStatus: string
+      name: string
+    }>
+    const openInstance = instances.find((inst) => inst.connectionStatus === 'open')
+
+    if (!openInstance) {
+      console.warn('[avatar-sync] No open evolution instance found to fetch profile picture.')
+      return
+    }
+
+    let cleanPhone = phone.replace(/\D/g, '')
+    if (cleanPhone.length >= 10 && !cleanPhone.startsWith('55')) {
+      cleanPhone = '55' + cleanPhone
+    }
+
+    const profileResponse = await fetch(`${EVOLUTION_API_URL}/chat/fetchProfile/${openInstance.name}`, {
+      method: 'POST',
+      headers: {
+        apikey: EVOLUTION_API_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ number: cleanPhone }),
+    })
+
+    if (!profileResponse.ok) {
+      console.warn(`[avatar-sync] Profile fetch HTTP error for ${cleanPhone}: ${profileResponse.statusText}`)
+      return
+    }
+
+    const profileData = (await profileResponse.json()) as { picture?: string }
+    const avatarUrl = profileData?.picture
+
+    if (avatarUrl) {
+      const { error: updateError } = await supabaseAdmin()
+        .from('contacts')
+        .update({
+          avatar_url: avatarUrl,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', contactId)
+
+      if (updateError) {
+        console.error('[avatar-sync] Error updating contact avatar_url:', updateError)
+      } else {
+        console.log(`[avatar-sync] Successfully synced avatar for contact ${cleanPhone}`)
+      }
+    }
+  } catch (error) {
+    console.error('[avatar-sync] Unexpected error during avatar sync:', error)
+  }
+}
+
 async function findOrCreateContact(
   accountId: string,
   configOwnerUserId: string,
@@ -901,6 +968,13 @@ async function findOrCreateContact(
         .update({ name, updated_at: new Date().toISOString() })
         .eq('id', existingContact.id)
     }
+
+    if (!existingContact.avatar_url) {
+      fetchAndSaveAvatar(existingContact.id as string, phone).catch((err) => {
+        console.error('[avatar-sync] fetchAndSaveAvatar failed for existing contact:', err)
+      })
+    }
+
     return { contact: existingContact, wasCreated: false }
   }
 
@@ -926,11 +1000,22 @@ async function findOrCreateContact(
     // the existing row instead of dropping the message.
     if (isUniqueViolation(createError)) {
       const raced = await findExistingContact(supabaseAdmin(), accountId, phone)
-      if (raced) return { contact: raced, wasCreated: false }
+      if (raced) {
+        if (!raced.avatar_url) {
+          fetchAndSaveAvatar(raced.id as string, phone).catch((err) => {
+            console.error('[avatar-sync] fetchAndSaveAvatar failed for raced contact:', err)
+          })
+        }
+        return { contact: raced, wasCreated: false }
+      }
     }
     console.error('Error creating contact:', createError)
     return null
   }
+
+  fetchAndSaveAvatar(newContact.id as string, phone).catch((err) => {
+    console.error('[avatar-sync] fetchAndSaveAvatar failed for new contact:', err)
+  })
 
   return { contact: newContact, wasCreated: true }
 }

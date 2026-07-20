@@ -40,14 +40,14 @@ export default function GuardaVolumePage() {
       .from("pipelines")
       .select("*")
       .eq("user_id", user.id)
-      .eq("name", "Guarda Volume")
+      .eq("name", "Storage")
       .maybeSingle();
 
     if (existing) return existing as Pipeline;
 
     const { data: pipeline, error } = await supabase
       .from("pipelines")
-      .insert({ user_id: user.id, account_id: accountId, name: "Guarda Volume" })
+      .insert({ user_id: user.id, account_id: accountId, name: "Storage" })
       .select()
       .single();
 
@@ -169,7 +169,7 @@ export default function GuardaVolumePage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Package className="h-5 w-5 text-primary" />
-          <h1 className="text-2xl font-bold">Guarda Volume</h1>
+          <h1 className="text-2xl font-bold">Storage</h1>
         </div>
         <Button
           disabled={stages.length === 0}
@@ -184,10 +184,10 @@ export default function GuardaVolumePage() {
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-20">
           <Package className="h-12 w-12 text-muted-foreground" />
           <h3 className="mt-4 text-lg font-medium text-foreground">
-            Nenhum pipeline de Guarda Volume
+            Nenhum pipeline de Storage
           </h3>
           <p className="mt-2 text-sm text-muted-foreground">
-            Crie um para come??ar a gerenciar contratos
+            Crie um para começar a gerenciar contratos
           </p>
         </div>
       ) : (

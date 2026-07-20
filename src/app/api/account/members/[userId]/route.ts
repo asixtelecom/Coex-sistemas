@@ -8,7 +8,7 @@ import {
   rateLimitResponse,
   RATE_LIMITS,
 } from "@/lib/rate-limit";
-import { supabaseAdmin } from "@/lib/automations/admin-client";
+import { supabaseAdmin, supabaseInternalAdmin } from "@/lib/automations/admin-client";
 
 function rpcErrorToResponse(err: PostgrestError): NextResponse {
   if (err.code === "42501") {
@@ -42,6 +42,37 @@ export async function PATCH(
     const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
     if (!body) {
       return NextResponse.json({ error: "Request body is required" }, { status: 400 });
+    }
+
+    // Handle email update (admin can change a member's email)
+    if (body.email !== undefined) {
+      const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return NextResponse.json({ error: "E-mail inválido" }, { status: 400 });
+      }
+
+      const admin = supabaseAdmin();
+      const internalAdmin = supabaseInternalAdmin();
+
+      // Update profiles table
+      const { error: profileErr } = await admin
+        .from("profiles")
+        .update({ email })
+        .eq("user_id", userId);
+      if (profileErr) {
+        console.error("[members route] email profile update error:", profileErr);
+        return NextResponse.json({ error: "Failed to update email in profile" }, { status: 500 });
+      }
+
+      // Update Supabase Auth user email
+      const { error: authErr } = await internalAdmin.auth.admin.updateUserById(userId, { email });
+      if (authErr) {
+        console.error("[members route] email auth update error:", authErr);
+        // Profile was already updated, but auth failed — report partial success
+        return NextResponse.json({ error: "Perfil atualizado, mas falha ao atualizar o e-mail de autenticação: " + authErr.message }, { status: 500 });
+      }
+
+      return NextResponse.json({ ok: true, email });
     }
 
     // Handle avatar update (admin can set any member's avatar)
@@ -131,7 +162,7 @@ export async function PATCH(
     const role = body.role;
     if (!isAccountRole(role)) {
       return NextResponse.json(
-        { error: "'role' must be one of owner, admin, agent, viewer" },
+        { error: "'role' must be one of owner, admin, agent, vistoria, viewer" },
         { status: 400 },
       );
     }

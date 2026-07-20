@@ -4,8 +4,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { formatCurrency } from '@/lib/currency';
+import { displayPhone } from '@/lib/whatsapp/phone-utils';
 import { toast } from 'sonner';
 import type { Contact, Tag, ContactTag, ContactNote, CustomField, ContactCustomValue, Deal, ContactPhone } from '@/types';
+import { ServiceBadges } from '@/components/ui/service-badges';
 import {
   Sheet,
   SheetContent,
@@ -454,7 +456,7 @@ export function ContactDetailView({
                       className="flex items-center gap-1 hover:text-primary transition-colors cursor-pointer"
                     >
                       <Phone className="size-3" />
-                      {contact.phone}
+                      {displayPhone(contact.phone)}
                       {copiedPhone === contact.phone ? (
                         <Check className="size-3 text-primary" />
                       ) : (
@@ -787,9 +789,7 @@ export function ContactDetailView({
                         className="rounded-lg border border-border bg-muted/50 p-3"
                       >
                         <div className="flex items-start justify-between gap-2">
-                          <p className="text-sm font-medium text-foreground">
-                            {deal.title}
-                          </p>
+                          <ServiceBadges title={deal.title} maxDisplay={3} />
                           {deal.stage && (
                             <span
                               className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium"

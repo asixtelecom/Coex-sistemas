@@ -47,7 +47,13 @@ function LoginPageInner() {
         setError(error.message || "Erro ao autenticar");
         setLoading(false);
       } else {
-        router.push(inviteToken ? `/join/${encodeURIComponent(inviteToken)}` : "/dashboard");
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("account_role")
+          .eq("user_id", (await supabase.auth.getUser()).data.user?.id)
+          .maybeSingle();
+        const redirectTo = profile?.account_role === "vistoria" ? "/vistoria" : "/dashboard";
+        router.push(inviteToken ? `/join/${encodeURIComponent(inviteToken)}` : redirectTo);
       }
     } catch (e) {
       console.error("[LOGIN] Exception", e);

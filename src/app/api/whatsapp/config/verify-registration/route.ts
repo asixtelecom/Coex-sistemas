@@ -55,11 +55,12 @@ export async function GET() {
     })
   }
 
-  const { data: config } = await supabase
+  const { data: configs } = await supabase
     .from('whatsapp_config')
     .select('*')
     .eq('account_id', accountId)
-    .maybeSingle()
+    .limit(1)
+  const config = configs?.[0]
 
   if (!config) {
     return NextResponse.json({

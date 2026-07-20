@@ -33,6 +33,8 @@ interface ConversationListProps {
   resyncToken?: number;
   /** Called when the active conversation is hidden by a filter change. */
   onDeselect?: () => void;
+  /** Auto-assign the current user to a conversation. */
+  onAutoAssign?: (conversationId: string) => void;
 }
 
 const STATUS_COLORS: Record<ConversationStatus, string> = {
@@ -43,7 +45,7 @@ const STATUS_COLORS: Record<ConversationStatus, string> = {
 
 type InboxFilter = ConversationStatus | "all" | "unread";
 
-type ChannelFilter = "all" | "whatsapp" | "instagram" | "messenger" | "telegram" | "webchat" | "linkedin";
+type ChannelFilter = "all" | "whatsapp" | "instagram" | "messenger" | "telegram" | "webchat" | "linkedin" | "tiktok" | "youtube";
 
 function ChannelIcon({ type, className }: { type: string; className?: string }) {
   switch (type) {
@@ -86,10 +88,33 @@ function ChannelIcon({ type, className }: { type: string; className?: string }) 
           <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
         </svg>
       );
+    case "tiktok":
+      return (
+        <svg viewBox="0 0 24 24" className={cn("h-4 w-4", className)} fill="#000000">
+          <path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1v-3.51a6.37 6.37 0 00-.79-.05A6.34 6.34 0 003.15 15.2a6.34 6.34 0 0010.86 4.48v-7.13a8.16 8.16 0 005.58 2.18v-3.45a4.85 4.85 0 01-2-.68z"/>
+        </svg>
+      );
+    case "youtube":
+      return (
+        <svg viewBox="0 0 24 24" className={cn("h-4 w-4", className)} fill="#FF0000">
+          <path d="M23.498 6.186a3.016 3.016 0 00-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 00.502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 002.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 002.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+        </svg>
+      );
     default:
       return <span className={cn("h-4 w-4 flex items-center justify-center text-xs", className)}>🌐</span>;
   }
 }
+
+const CHANNEL_LABELS: Record<string, string> = {
+  whatsapp: "WhatsApp",
+  instagram: "Instagram",
+  messenger: "Messenger",
+  telegram: "Telegram",
+  webchat: "Webchat",
+  linkedin: "LinkedIn",
+  tiktok: "TikTok",
+  youtube: "YouTube",
+};
 
 const FILTER_OPTIONS: { label: string; value: InboxFilter }[] = [
   { label: "Todas", value: "all" },
@@ -107,6 +132,7 @@ export function ConversationList({
   onAssignChange,
   resyncToken = 0,
   onDeselect,
+  onAutoAssign,
 }: ConversationListProps) {
   const [search, setSearch] = useState("");
   const [unreadExpanded, setUnreadExpanded] = useState(false);
@@ -297,34 +323,44 @@ export function ConversationList({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {/* Channel filter */}
-        <div className="flex gap-1 flex-wrap">
-          {(["whatsapp", "instagram", "messenger", "telegram", "webchat", "linkedin"] as const).map((ch) => (
-            <button
-              key={ch}
-              onClick={() => setChannelFilter(ch)}
+        {/* Channel filter dropdown */}
+        <DropdownMenu>
+          <DropdownMenuTrigger className="inline-flex items-center justify-center h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground rounded-md hover:bg-muted">
+            {channelFilter === "all" ? "Canais" : CHANNEL_LABELS[channelFilter]}
+            <ChevronDown className="h-3 w-3" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="start"
+            className="border-border bg-popover"
+          >
+            <DropdownMenuItem
+              onClick={() => setChannelFilter("all")}
               className={cn(
-                "inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md transition-colors",
-                channelFilter === ch
-                  ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                "text-sm",
+                channelFilter === "all"
+                  ? "text-primary"
+                  : "text-popover-foreground"
               )}
             >
-              <>
-                <ChannelIcon type={ch} />
-                <span>
-                  {ch === "whatsapp"
-                    ? "WhatsApp"
-                    : ch === "webchat"
-                      ? "Webchat"
-                      : ch === "linkedin"
-                        ? "LinkedIn"
-                        : ch.charAt(0).toUpperCase() + ch.slice(1)}
-                </span>
-              </>
-            </button>
-          ))}
-        </div>
+              Todos
+            </DropdownMenuItem>
+            {(["whatsapp", "instagram", "messenger", "telegram", "webchat", "linkedin", "tiktok", "youtube"] as const).map((ch) => (
+              <DropdownMenuItem
+                key={ch}
+                onClick={() => setChannelFilter(ch)}
+                className={cn(
+                  "text-sm flex items-center gap-2",
+                  channelFilter === ch
+                    ? "text-primary"
+                    : "text-popover-foreground"
+                )}
+              >
+                <ChannelIcon type={ch} className="h-3.5 w-3.5" />
+                {CHANNEL_LABELS[ch]}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* Conversation Items.
@@ -549,6 +585,17 @@ function ConversationItem({
       })
     : "";
 
+  const formattedTime = conversation.last_message_at
+    ? (() => {
+        const d = new Date(conversation.last_message_at)
+        const dd = String(d.getDate()).padStart(2, "0")
+        const mm = String(d.getMonth() + 1).padStart(2, "0")
+        const hh = String(d.getHours()).padStart(2, "0")
+        const mi = String(d.getMinutes()).padStart(2, "0")
+        return `${dd}/${mm} ${hh}:${mi}`
+      })()
+    : "";
+
   return (
     <div className="flex flex-col">
       <button
@@ -576,14 +623,7 @@ function ConversationItem({
           ) : (
             <span className={cn(isSearching ? "text-xs" : "text-sm")}>{initials}</span>
           )}
-          {conversation.channel?.type && (
-            <span
-              className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-background p-0.5 shadow-sm"
-              title={conversation.channel.type}
-            >
-              <ChannelIcon type={conversation.channel.type} className="h-2 w-2" />
-            </span>
-          )}
+
         </div>
 
         {/* Content */}
@@ -592,20 +632,7 @@ function ConversationItem({
             <div className="flex items-center justify-between gap-2">
               <span className="truncate text-sm font-medium text-foreground flex items-center gap-1.5">
                 {displayName}
-                {conversation.channel?.type === 'whatsapp' && (
-                  <span className="shrink-0 rounded-md bg-primary/10 px-1 py-0.5 text-[10px] font-medium text-primary leading-none">
-                    {(() => {
-                      const ch = conversation.channel
-                      if (!ch) return ''
-                      const dp = ch.config && typeof ch.config === 'object' && !Array.isArray(ch.config)
-                        ? (ch.config as Record<string, unknown>).display_phone as string | undefined
-                        : undefined
-                      return dp
-                        ? dp.replace(/\D/g, '').slice(-2)
-                        : ch.name?.slice(0, 2) || ''
-                    })()}
-                  </span>
-                )}
+
               </span>
               <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo}</span>
             </div>
@@ -619,13 +646,51 @@ function ConversationItem({
                     {conversation.unread_count}
                   </span>
                 )}
+                {conversation.channel?.type && (
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[8px] font-medium leading-none",
+                      conversation.channel.type === "whatsapp" && "bg-emerald-500/10 text-emerald-700",
+                      conversation.channel.type === "instagram" && "bg-pink-500/10 text-pink-700",
+                      conversation.channel.type === "messenger" && "bg-blue-500/10 text-blue-700",
+                      conversation.channel.type === "telegram" && "bg-sky-500/10 text-sky-700",
+                      conversation.channel.type === "webchat" && "bg-violet-500/10 text-violet-700",
+                      conversation.channel.type === "linkedin" && "bg-blue-600/10 text-blue-700",
+                      conversation.channel.type === "tiktok" && "bg-black/10 text-black",
+                      conversation.channel.type === "youtube" && "bg-red-500/10 text-red-700",
+                    )}
+                    title={conversation.channel.type === "whatsapp" ? "WhatsApp" : conversation.channel.type === "tiktok" ? "TikTok" : conversation.channel.type === "youtube" ? "YouTube" : conversation.channel.type === "webchat" ? "Webchat" : conversation.channel.type === "linkedin" ? "LinkedIn" : conversation.channel.type.charAt(0).toUpperCase() + conversation.channel.type.slice(1)}
+                  >
+                    <ChannelIcon type={conversation.channel.type} className="h-2.5 w-2.5" />
+                    {conversation.channel.type === 'whatsapp' && (() => {
+                      const ch = conversation.channel
+                      if (!ch) return null
+                      const dp = ch.config && typeof ch.config === 'object' && !Array.isArray(ch.config)
+                        ? (ch.config as Record<string, unknown>).display_phone as string | undefined
+                        : undefined
+                      const suffix = dp
+                        ? dp.replace(/\D/g, '').slice(-2)
+                        : ch.name?.slice(0, 2) || ''
+                      return suffix ? <span>{suffix}</span> : null
+                    })()}
+                  </span>
+                )}
+                {formattedTime && (
+                  <span className="text-[9px] text-muted-foreground/60 tabular-nums">
+                    {formattedTime}
+                  </span>
+                )}
                 <span
                   className={cn(
-                    "h-2 w-2 rounded-full",
-                    STATUS_COLORS[conversation.status]
+                    "inline-flex items-center rounded px-1 py-0.5 text-[8px] font-semibold uppercase leading-none tracking-wide",
+                    conversation.status === "open" && "bg-emerald-500/15 text-emerald-600",
+                    conversation.status === "pending" && "bg-amber-500/15 text-amber-600",
+                    conversation.status === "closed" && "bg-muted text-muted-foreground/70",
                   )}
                   title={conversation.status}
-                />
+                >
+                  {conversation.status === "open" ? "Aberto" : conversation.status === "pending" ? "Pendente" : "Fechado"}
+                </span>
               </div>
             </div>
           </div>
@@ -638,22 +703,25 @@ function ConversationItem({
       </button>
 
       {/* Agent Assignment Badge */}
-      {!isSearching && (
+      {!isSearching && assignedAgent && (
         <div className="px-3 pb-3">
           <DropdownMenu>
             <DropdownMenuTrigger
               onClick={(e) => e.stopPropagation()}
               className={cn(
                 "inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full transition-colors",
-                assignedAgent
-                  ? "bg-primary/10 text-primary"
-                  : "bg-muted text-muted-foreground hover:bg-muted/80"
+                "bg-primary/10 text-primary"
               )}
             >
-              <User className="h-3 w-3" />
-              <span>
-                {assignedAgent?.full_name || assignedAgent?.email || "Atribuir agente"}
-              </span>
+              {assignedAgent.avatar_url ? (
+                <img
+                  src={assignedAgent.avatar_url}
+                  alt={assignedAgent.full_name || "Agente"}
+                  className="h-3 w-3 rounded-full object-cover"
+                />
+              ) : (
+                <User className="h-3 w-3" />
+              )}
               <ChevronDown className="h-2 w-2" />
             </DropdownMenuTrigger>
             <DropdownMenuContent className="border-border bg-popover">

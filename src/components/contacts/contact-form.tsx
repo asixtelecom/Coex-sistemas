@@ -342,13 +342,12 @@ export function ContactForm({
         }
         return;
       }
-      const message =
-        err instanceof Error
-          ? err.message
-          : typeof err === 'object' && err !== null && 'message' in err
-            ? String((err as { message: unknown }).message)
-            : 'Falha ao salvar contato';
-      toast.error(message);
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('contact_tags') && msg.includes('row-level security')) {
+        toast.error('Você não tem permissão para gerenciar tags neste contato');
+      } else {
+        toast.error(msg);
+      }
     } finally {
       setSaving(false);
     }

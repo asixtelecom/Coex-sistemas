@@ -138,11 +138,12 @@ export async function PATCH(
     }
 
     if (!isDryRun()) {
-      const { data: config, error: configError } = await supabase
+      const { data: configs, error: configError } = await supabase
         .from('whatsapp_config')
         .select('*')
         .eq('account_id', accountId)
-        .single()
+        .limit(1)
+      const config = configs?.[0]
       if (configError || !config) {
         return NextResponse.json(
           { error: 'WhatsApp not configured.' },
@@ -278,28 +279,27 @@ export async function DELETE(
     }
 
     if (existing.meta_template_id && !isDryRun()) {
-      const { data: config, error: configError } = await supabase
+      const { data: configs, error: configError } = await supabase
         .from('whatsapp_config')
         .select('*')
         .eq('account_id', accountId)
-        .single()
-      if (configError || !config || !config.waba_id) {
-        return NextResponse.json(
-          { error: 'WhatsApp not configured — cannot delete on Meta.' },
-          { status: 400 },
-        )
-      }
-      const accessToken = decrypt(config.access_token)
-      try {
-        await deleteMessageTemplate({
-          wabaId: config.waba_id,
-          accessToken,
-          name: existing.name,
-          metaTemplateId: existing.meta_template_id,
-        })
-      } catch (e) {
-        const message = e instanceof Error ? e.message : 'Meta delete failed.'
-        return NextResponse.json({ error: message }, { status: 502 })
+
+      if (configs && configs.length > 0) {
+        for (const config of configs) {
+          if (!config.waba_id || !config.access_token) continue
+          try {
+            const accessToken = decrypt(config.access_token)
+            await deleteMessageTemplate({
+              wabaId: config.waba_id,
+              accessToken,
+              name: existing.name,
+              metaTemplateId: existing.meta_template_id,
+            })
+          } catch (e) {
+            console.error(`Meta delete failed for WABA ${config.waba_id}:`, e)
+            // Silently continue to try other WABAs and allow local deletion
+          }
+        }
       }
     }
 
@@ -310,7 +310,7 @@ export async function DELETE(
     if (delErr) {
       return NextResponse.json(
         {
-          error: `Deleted on Meta but failed to delete locally: ${delErr.message}.`,
+          error: `Failed to delete template locally: ${delErr.message}.`,
         },
         { status: 500 },
       )

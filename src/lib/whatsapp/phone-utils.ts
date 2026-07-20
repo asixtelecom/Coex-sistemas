@@ -102,3 +102,20 @@ export function phoneVariants(sanitized: string): string[] {
 export function isRecipientNotAllowedError(message: string): boolean {
   return /131030|not in allowed list|not in the allowed list/i.test(message)
 }
+
+/**
+ * Format phone for display, stripping leading "55" country code.
+ * e.g. "5511947196405" → "(11) 94719-6405"
+ */
+export function displayPhone(phone: string): string {
+  if (!phone) return ''
+  let digits = phone.replace(/\D/g, '')
+  if (digits.length >= 12 && digits.startsWith('55')) {
+    digits = digits.slice(2)
+  }
+  digits = digits.slice(0, 11)
+  if (digits.length <= 2) return digits
+  if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`
+  if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`
+}

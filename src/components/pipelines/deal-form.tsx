@@ -33,8 +33,11 @@ import {
   Search,
   MapPin,
 } from "lucide-react";
+import { ServiceSelector } from "@/components/ui/service-selector";
+import { parseServices, servicesToString } from "@/lib/services";
 import { toast } from "sonner";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 
 const MapPopup = dynamic(() => import("./map-popup").then((m) => m.MapPopup), { ssr: false });
 
@@ -70,7 +73,7 @@ export function DealForm({
   const supabase = createClient();
   const { accountId, defaultCurrency } = useAuth();
 
-  const [title, setTitle] = useState("");
+  const [selectedServices, setSelectedServices] = useState<string[]>([]);
   const [value, setValue] = useState("");
   const [currency, setCurrency] = useState(defaultCurrency);
   const [contactId, setContactId] = useState("");
@@ -103,9 +106,15 @@ export function DealForm({
   const lastCnpjRef = useRef('');
   const [statusAction, setStatusAction] = useState<DealStatus | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const formMode = title === "Guarda Volume" ? "guarda-volume" : "lead";
+  const formMode = selectedServices.includes("Storage") ? "guarda-volume" : "lead";
+
+  const [hasVistoria, setHasVistoria] = useState(false);
+  const [vistoriaList, setVistoriaList] = useState<any[]>([]);
+  const [selectedVistoriaId, setSelectedVistoriaId] = useState("");
+  const [vistoriaLoading, setVistoriaLoading] = useState(false);
 
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const router = useRouter();
 
   // Reset the form fields every time the sheet opens or its input
   // props change. This is a legitimate prop-driven sync; the rule is
@@ -115,7 +124,7 @@ export function DealForm({
     if (!open) return;
     setConfirmDelete(false);
     if (deal) {
-      setTitle(deal.title);
+      setSelectedServices(parseServices(deal.title));
       setValue(String(deal.value ?? ""));
       setCurrency(deal.currency || defaultCurrency);
       // contact_id is nullable when the contact has been deleted
@@ -136,8 +145,10 @@ export function DealForm({
       setOriginAddress(deal.origin_address ?? "");
       setDestinationAddress(deal.destination_address ?? "");
       setNotes(deal.notes ?? "");
+      setHasVistoria(!!deal.vistoria_id);
+      setSelectedVistoriaId(deal.vistoria_id ?? "");
     } else {
-      setTitle("");
+      setSelectedServices([]);
       setValue("");
       setCurrency(defaultCurrency);
       setContactId(initialContact?.id ?? "");
@@ -156,6 +167,9 @@ export function DealForm({
       setOriginAddress("");
       setDestinationAddress("");
       setNotes("");
+      setHasVistoria(false);
+      setSelectedVistoriaId("");
+      setVistoriaList([]);
     }
   }, [open, deal, defaultStageIdProp, stages, defaultCurrency, initialContact]);
   /* eslint-enable react-hooks/set-state-in-effect */
@@ -203,6 +217,52 @@ export function DealForm({
       cancelled = true;
     };
   }, [open, contactId, supabase]);
+
+  const qualifyingServices = ["Mudança residencial", "Mudança Comercial", "Mudança Iterestadual", "Storage"];
+
+  useEffect(() => {
+    const isQualifying = selectedServices.some(s => qualifyingServices.includes(s));
+    if (!open || !isQualifying) {
+      setVistoriaList([]);
+      setSelectedVistoriaId("");
+      setHasVistoria(false);
+      return;
+    }
+    if (!hasVistoria) {
+      setVistoriaList([]);
+      setSelectedVistoriaId("");
+      return;
+    }
+    let cancelled = false;
+    setVistoriaLoading(true);
+    (async () => {
+      const nameFilter = contactName.trim();
+      if (!contactId && !nameFilter) {
+        setVistoriaList([]);
+        setVistoriaLoading(false);
+        return;
+      }
+      try {
+        const params = new URLSearchParams();
+        if (contactId) params.set("contact_id", contactId);
+        if (nameFilter) params.set("contact_name", nameFilter);
+        const res = await fetch(`/api/vistoria/search?${params.toString()}`);
+        if (!res.ok) {
+          setVistoriaList([]);
+          setVistoriaLoading(false);
+          return;
+        }
+        const data = await res.json();
+        if (cancelled) return;
+        setVistoriaList(data ?? []);
+      } catch {
+        setVistoriaList([]);
+      } finally {
+        setVistoriaLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open, contactId, contactName, selectedServices, hasVistoria]);
 
   const fetchCnpjData = useCallback(async (cnpjDigits: string) => {
     if (lastCnpjRef.current === cnpjDigits) return;
@@ -266,7 +326,7 @@ export function DealForm({
   }
 
   async function handleSave() {
-    if (!title.trim() || !contactPhone.trim() || !stageId) {
+    if (selectedServices.length === 0 || !contactPhone.trim() || !stageId) {
       toast.error("Serviço, telefone e estágio são obrigatórios");
       return;
     }
@@ -335,7 +395,7 @@ export function DealForm({
     }
 
     const payload = {
-      title: title.trim(),
+      title: servicesToString(selectedServices),
       value: parseFloat(value) || 0,
       currency,
       contact_id: resolvedContactId,
@@ -349,6 +409,7 @@ export function DealForm({
       origin_address: originAddress.trim() || null,
       destination_address: destinationAddress.trim() || null,
       conversation_id: conversationId || null,
+      vistoria_id: hasVistoria && selectedVistoriaId ? selectedVistoriaId : null,
     };
 
     if (deal) {
@@ -428,7 +489,7 @@ export function DealForm({
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-border/50 p-4">
         <h2 className="text-base font-medium text-popover-foreground">
-          {deal ? (formMode === "guarda-volume" ? "Editar Contrato" : "Editar Lead") : (formMode === "guarda-volume" ? "Novo Contrato Guarda Volume" : "Novo Lead")}
+          {deal ? (formMode === "guarda-volume" ? "Editar Contrato" : "Editar Lead") : (formMode === "guarda-volume" ? "Novo Contrato Storage" : "Novo Lead")}
         </h2>
         {inline && (
           <button
@@ -444,24 +505,10 @@ export function DealForm({
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             <div className="grid gap-2">
               <Label className="text-muted-foreground">Serviços</Label>
-              <select
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className="h-9 w-full rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary"
-              >
-                <option value="">Selecione um tipo de serviço</option>
-                <option value="Mudança residencial">Mudança residencial</option>
-                <option value="Mudança Comercial">Mudança Comercial</option>
-                <option value="Mudança Iterestadual">Mudança Iterestadual</option>
-                <option value="Içamento">Içamento</option>
-                <option value="Guarda Volume">Guarda Volume</option>
-                <option value="Transportes de Cargas">Transportes de Cargas</option>
-                <option value="Montagem + Desmontagem">Montagem + Desmontagem</option>
-                <option value="Montagem">Montagem</option>
-                <option value="Desmontagem">Desmontagem</option>
-                <option value="armazenamento">armazenamento</option>
-                <option value="Transporte">Transporte</option>
-              </select>
+              <ServiceSelector
+                value={selectedServices}
+                onChange={setSelectedServices}
+              />
             </div>
 
             {formMode === "guarda-volume" && (
@@ -472,6 +519,105 @@ export function DealForm({
                   onChange={(e) => setBoxNumber(e.target.value)}
                   placeholder="Ex: 03"
                 />
+              </div>
+            )}
+
+            {qualifyingServices.some(s => selectedServices.includes(s)) && (
+              <div className="grid gap-2 rounded-md border border-border p-3">
+                <Label className="text-muted-foreground">Tem vistoria?</Label>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant={hasVistoria ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setHasVistoria(true)}
+                    className="flex-1"
+                  >
+                    Sim
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={!hasVistoria ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => { setHasVistoria(false); setSelectedVistoriaId(""); setVistoriaList([]); }}
+                    className="flex-1"
+                  >
+                    Não
+                  </Button>
+                </div>
+                {hasVistoria && (
+                  <div className="space-y-2 mt-1">
+                    {vistoriaLoading ? (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Loader2 className="size-4 animate-spin" /> Buscando vistorias...
+                      </div>
+                    ) : vistoriaList.length === 0 && !selectedVistoriaId ? (
+                      <div className="space-y-2">
+                        <p className="text-sm text-muted-foreground">Nenhuma vistoria encontrada para este contato.</p>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => {
+                            const params = new URLSearchParams();
+                            if (contactId) params.set("contact_id", contactId);
+                            if (contactName.trim()) params.set("contact_name", contactName.trim());
+                            if (contactPhone.trim()) params.set("contact_phone", contactPhone.trim());
+                            router.push(`/vistoria?${params.toString()}`);
+                          }}
+                        >
+                          Criar nova vistoria
+                        </Button>
+                      </div>
+                    ) : (
+                      <>
+                        {vistoriaList.length > 0 ? (
+                          <select
+                            value={selectedVistoriaId}
+                            onChange={(e) => setSelectedVistoriaId(e.target.value)}
+                            className="h-9 w-full rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary"
+                          >
+                            <option value="">Selecione uma vistoria...</option>
+                            {vistoriaList.map((v: any) => (
+                            <option key={v.id} value={v.id}>
+                              {v.data_vistoria} — {Number(v.total_cubagem).toFixed(3)} m³
+                            </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">Vistoria vinculada a este negócio.</p>
+                        )}
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="w-full text-xs text-muted-foreground"
+                          onClick={() => {
+                            const params = new URLSearchParams();
+                            if (contactId) params.set("contact_id", contactId);
+                            if (contactName.trim()) params.set("contact_name", contactName.trim());
+                            if (contactPhone.trim()) params.set("contact_phone", contactPhone.trim());
+                            router.push(`/vistoria?${params.toString()}`);
+                          }}
+                        >
+                          + Criar nova vistoria
+                        </Button>
+                      </>
+                    )}
+                    {selectedVistoriaId && (() => {
+                      const v = vistoriaList.find((x: any) => x.id === selectedVistoriaId);
+                      if (!v) return null;
+                      return (
+                        <div className="rounded-md border border-border bg-muted/50 p-2 text-xs space-y-1">
+                          <p><span className="text-muted-foreground">Data:</span> {v.data_vistoria}</p>
+                          <p><span className="text-muted-foreground">Cubagem total:</span> {Number(v.total_cubagem).toFixed(3)} m³</p>
+                          <p><span className="text-muted-foreground">Vistoriador:</span> —</p>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
               </div>
             )}
 
@@ -841,10 +987,11 @@ export function DealForm({
               </Button>
               <Button
                 onClick={handleSave}
-                disabled={saving || !title.trim() || !contactPhone.trim() || !stageId}
+                disabled={saving || selectedServices.length === 0 || !contactPhone.trim() || !stageId}
                 className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 {saving ? "Salvando..." : deal ? "Salvar Alterações" : formMode === "guarda-volume" ? "Criar Contrato" : "Criar Negócio"}
+
               </Button>
             </div>
 

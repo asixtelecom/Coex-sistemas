@@ -26,6 +26,7 @@ import { toast } from 'sonner';
 import {
   AlertTriangle,
   Camera,
+  Pencil,
   Square,
   CheckSquare,
   Loader2,
@@ -55,7 +56,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import { RequireRole } from '@/components/auth/require-role';
+import { Input } from '@/components/ui/input';
 import { useAuth } from '@/hooks/use-auth';
 import { FEATURE_PERMISSIONS, type AccountRole, type FeaturePermission, type FeaturePermissions } from '@/lib/auth/roles';
 import { CreateAgentDialog } from './create-agent-dialog';
@@ -76,7 +83,8 @@ const PERMISSION_LABELS: Record<FeaturePermission, string> = {
   agenda: 'Vistoria',
   contacts: 'Contatos',
   pipelines: 'Funil de Vendas',
-  'guarda-volume': 'Guarda Volume',
+  'guarda-volume': 'Storage',
+  vistoria: 'Vistoria',
 };
 
 interface Member {
@@ -91,7 +99,7 @@ interface Member {
 
 interface Invitation {
   id: string;
-  role: 'admin' | 'agent' | 'viewer';
+  role: 'admin' | 'agent' | 'vistoria' | 'viewer';
   label: string | null;
   created_at: string;
   expires_at: string;
@@ -102,6 +110,7 @@ interface Invitation {
 const EDITABLE_ROLES: { value: AccountRole; label: string; hint: string }[] = [
   { value: 'admin', label: 'Admin', hint: 'Gerenciar membros e todas as configurações' },
   { value: 'agent', label: 'Agente', hint: 'Usar funcionalidades; sem acesso a config' },
+  { value: 'vistoria', label: 'Vistoria', hint: 'Criar e gerenciar vistorias; sem acesso a config' },
   { value: 'viewer', label: 'Visualizador', hint: 'Apenas leitura em todo o app' },
 ];
 
@@ -151,12 +160,30 @@ export function MembersTab() {
   const [avatarTargetMember, setAvatarTargetMember] = useState<Member | null>(null);
   const avatarFileInputRef = useRef<HTMLInputElement>(null);
 
+  const [editingEmail, setEditingEmail] = useState<{
+    member: Member;
+    value: string;
+    saving: boolean;
+  } | null>(null);
+
+  const [mailboxes, setMailboxes] = useState<{ id: number; title: string; color: string }[]>([]);
+  const [agentMailboxes, setAgentMailboxes] = useState<Record<string, number[]>>({});
+  const [editingMailboxes, setEditingMailboxes] = useState<{
+    member: Member;
+    selected: number[];
+    saving: boolean;
+  } | null>(null);
+
   const loadEverything = useCallback(async () => {
     try {
-      const [mres, ires] = await Promise.all([
+      const [mres, ires, mbres, amres] = await Promise.all([
         fetch('/api/account/members', { cache: 'no-store' }),
         canManageMembers
           ? fetch('/api/account/invitations', { cache: 'no-store' })
+          : Promise.resolve(null),
+        fetch('/api/account/mailboxes', { cache: 'no-store' }).catch(() => null),
+        canManageMembers
+          ? fetch('/api/account/agent-mailboxes', { cache: 'no-store' }).catch(() => null)
           : Promise.resolve(null),
       ]);
 
@@ -167,6 +194,21 @@ export function MembersTab() {
       }
       const mdata = (await mres.json()) as { members: Member[] };
       setMembers(mdata.members);
+
+      if (mbres && mbres.ok) {
+        const mbData = await mbres.json() as { mailboxes: { id: number; title: string; color: string }[] };
+        setMailboxes(mbData.mailboxes ?? []);
+      }
+
+      if (amres && amres.ok) {
+        const amData = await amres.json() as { assignments: { user_id: string; mailbox_id: number }[] };
+        const grouped: Record<string, number[]> = {};
+        for (const a of amData.assignments ?? []) {
+          if (!grouped[a.user_id]) grouped[a.user_id] = [];
+          grouped[a.user_id].push(a.mailbox_id);
+        }
+        setAgentMailboxes(grouped);
+      }
 
       if (ires) {
         if (!ires.ok) {
@@ -297,6 +339,35 @@ export function MembersTab() {
     }
   }
 
+  async function handleMailboxUpdate() {
+    if (!editingMailboxes) return;
+    setEditingMailboxes((prev) => prev ? { ...prev, saving: true } : null);
+    try {
+      const res = await fetch('/api/account/agent-mailboxes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: editingMailboxes.member.user_id,
+          mailbox_ids: editingMailboxes.selected,
+        }),
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        toast.error(payload.error || 'Erro ao atribuir caixas');
+        return;
+      }
+      toast.success('Caixas de e-mail atualizadas');
+      setAgentMailboxes((prev) => ({
+        ...prev,
+        [editingMailboxes.member.user_id]: [...editingMailboxes.selected],
+      }));
+      setEditingMailboxes(null);
+    } catch (err) {
+      console.error('[MembersTab] mailbox update error:', err);
+      toast.error('Não foi possível contactar o servidor');
+    }
+  }
+
   async function handleRevoke(invite: Invitation) {
     try {
       const res = await fetch(`/api/account/invitations/${invite.id}`, {
@@ -377,6 +448,38 @@ export function MembersTab() {
   function handleAvatarClick(member: Member) {
     if (!canManageMembers || member.role === 'owner' || member.user_id === user?.id) return;
     handleAvatarPick(member);
+  }
+
+  async function handleEmailUpdate() {
+    if (!editingEmail) return;
+    setEditingEmail((prev) => prev ? { ...prev, saving: true } : null);
+    try {
+      const res = await fetch(
+        `/api/account/members/${editingEmail.member.user_id}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: editingEmail.value }),
+        },
+      );
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        toast.error(payload.error || 'Erro ao atualizar e-mail');
+        return;
+      }
+      toast.success('E-mail atualizado');
+      setMembers((prev) =>
+        prev.map((m) =>
+          m.user_id === editingEmail.member.user_id
+            ? { ...m, email: editingEmail.value }
+            : m,
+        ),
+      );
+      setEditingEmail(null);
+    } catch (err) {
+      console.error('[MembersTab] email update error:', err);
+      toast.error('Não foi possível contactar o servidor');
+    }
   }
 
   if (loading) {
@@ -474,9 +577,44 @@ export function MembersTab() {
                         )}
                       </div>
                       {member.email && (
-                        <p className="truncate text-xs text-muted-foreground">
-                          {member.email}
-                        </p>
+                        <div className="flex items-center gap-1">
+                          <p className="truncate text-xs text-muted-foreground">
+                            {member.email}
+                          </p>
+                          {canManageMembers && !isOwnerRow && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setEditingEmail({
+                                  member,
+                                  value: member.email || '',
+                                  saving: false,
+                                })
+                              }
+                              className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+                              title="Editar e-mail"
+                            >
+                              <Pencil className="size-3" />
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      {agentMailboxes[member.user_id]?.length > 0 && (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {agentMailboxes[member.user_id].map((mid) => {
+                            const mb = mailboxes.find((m) => m.id === mid);
+                            if (!mb) return null;
+                            return (
+                              <span
+                                key={mid}
+                                className="inline-flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+                              >
+                                <span className="size-1.5 rounded-full shrink-0" style={{ backgroundColor: mb.color }} />
+                                {mb.title}
+                              </span>
+                            );
+                          })}
+                        </div>
                       )}
                     </div>
                   </div>
@@ -571,6 +709,7 @@ export function MembersTab() {
                               contacts: member.permissions?.contacts ?? false,
                               pipelines: member.permissions?.pipelines ?? false,
                               'guarda-volume': member.permissions?.['guarda-volume'] ?? false,
+                              vistoria: member.permissions?.vistoria ?? false,
                             },
                             saving: false,
                           })
@@ -579,6 +718,25 @@ export function MembersTab() {
                         title="Editar permissões"
                       >
                         <CheckSquare className="size-4" />
+                      </Button>
+                    )}
+
+                    {/* Mailbox assignment button — admin+ only; never owner */}
+                    {canManageMembers && !isOwnerRow && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          setEditingMailboxes({
+                            member,
+                            selected: [...(agentMailboxes[member.user_id] ?? [])],
+                            saving: false,
+                          })
+                        }
+                        className="border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 hover:border-amber-500/60"
+                        title="Atribuir caixas de e-mail"
+                      >
+                        <Mail className="size-4" />
                       </Button>
                     )}
                   </div>
@@ -798,6 +956,148 @@ export function MembersTab() {
                 </>
               ) : (
                 'Salvar permissões'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Mailbox assignment dialog */}
+      <Dialog
+        open={editingMailboxes !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditingMailboxes(null);
+        }}
+      >
+        <DialogContent className="bg-popover border-border sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-popover-foreground">
+              <Mail className="size-4 text-amber-400" />
+              Caixas de e-mail — {editingMailboxes?.member.full_name || 'membro'}
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              Selecione as caixas de e-mail que este agente pode usar para enviar mensagens.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-1.5 py-2 max-h-60 overflow-y-auto">
+            {mailboxes.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nenhuma caixa de e-mail disponível.</p>
+            ) : (
+              mailboxes.map((mb) => {
+                const checked = editingMailboxes?.selected.includes(mb.id) ?? false;
+                return (
+                  <button
+                    key={mb.id}
+                    type="button"
+                    onClick={() =>
+                      setEditingMailboxes((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              selected: checked
+                                ? prev.selected.filter((id) => id !== mb.id)
+                                : [...prev.selected, mb.id],
+                            }
+                          : null,
+                      )
+                    }
+                    className="flex w-full items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-left transition-colors hover:bg-card-2"
+                  >
+                    {checked ? (
+                      <CheckSquare className="size-5 shrink-0 text-primary" />
+                    ) : (
+                      <Square className="size-5 shrink-0 text-muted-foreground" />
+                    )}
+                    <span
+                      className="size-3 rounded-full shrink-0"
+                      style={{ backgroundColor: mb.color }}
+                    />
+                    <span className="text-sm font-medium text-foreground">{mb.title}</span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+
+          <DialogFooter className="bg-popover border-border">
+            <Button
+              variant="outline"
+              onClick={() => setEditingMailboxes(null)}
+              className="border-border text-muted-foreground hover:bg-muted"
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleMailboxUpdate}
+              disabled={editingMailboxes?.saving}
+              className="bg-primary hover:bg-primary/90 text-primary-foreground"
+            >
+              {editingMailboxes?.saving ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  Salvando...
+                </>
+              ) : (
+                'Salvar atribuição'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit email dialog */}
+      <Dialog
+        open={editingEmail !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditingEmail(null);
+        }}
+      >
+        <DialogContent className="bg-popover border-border sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-popover-foreground">
+              <Pencil className="size-4 text-primary" />
+              Editar e-mail
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              Altere o e-mail de <span className="font-medium text-muted-foreground">{editingEmail?.member.full_name || 'membro'}</span>.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-2">
+            <Input
+              type="email"
+              value={editingEmail?.value ?? ''}
+              onChange={(e) =>
+                setEditingEmail((prev) =>
+                  prev ? { ...prev, value: e.target.value } : null,
+                )
+              }
+              placeholder="novo@email.com"
+              autoFocus
+            />
+          </div>
+
+          <DialogFooter className="bg-popover border-border">
+            <Button
+              variant="outline"
+              onClick={() => setEditingEmail(null)}
+              className="border-border text-muted-foreground hover:bg-muted"
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleEmailUpdate}
+              disabled={editingEmail?.saving || !editingEmail?.value}
+              className="bg-primary hover:bg-primary/90 text-primary-foreground"
+            >
+              {editingEmail?.saving ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  Salvando...
+                </>
+              ) : (
+                'Salvar e-mail'
               )}
             </Button>
           </DialogFooter>

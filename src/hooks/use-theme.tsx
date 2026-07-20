@@ -106,7 +106,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const toggleMode = useCallback(() => {
-    setMode(mode === "dark" ? "light" : "dark");
+    const cycle: Mode[] = ["dark", "lite", "light"];
+    const idx = cycle.indexOf(mode);
+    setMode(cycle[(idx + 1) % cycle.length]);
   }, [mode, setMode]);
 
   // Sync from other tabs — change theme or mode in tab A, tab B

@@ -58,7 +58,7 @@ export default function AlmoxarifadoPage() {
   async function loadItems() {
     if (!account?.id) return
     const { data } = await supabase
-      .from("almoxarifado_items")
+      .from("estoque_items")
       .select("*")
       .eq("account_id", account.id)
       .order("name")
@@ -122,7 +122,7 @@ export default function AlmoxarifadoPage() {
   return (
     <div className="space-y-4 p-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Almoxerifado</h1>
+        <h1 className="text-2xl font-bold">Estoque</h1>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger
             render={<Button />}

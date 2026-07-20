@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
-import { LogOut, Menu, Settings as SettingsIcon, User } from "lucide-react";
+import { LogOut, Mail, Menu, Settings as SettingsIcon, User } from "lucide-react";
 import {
   Avatar,
   AvatarFallback,
@@ -17,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ModeToggle } from "@/components/layout/mode-toggle";
+import { NotificationBell } from "@/components/layout/notification-bell";
 
 const pageTitles: Record<string, string> = {
   "/dashboard": "Painel",
@@ -26,7 +27,8 @@ const pageTitles: Record<string, string> = {
   "/broadcasts": "Transmissões",
   "/automations": "Automações",
   "/settings": "Configurações",
-  "/almoxerifado": "Almoxerifado",
+  "/estoque": "Estoque",
+  "/guarda-volume": "Storage",
 };
 
 function getPageTitle(pathname: string): string {
@@ -71,6 +73,14 @@ export function Header({ onOpenSidebar }: HeaderProps) {
       </div>
 
       <div className="flex items-center gap-1 sm:gap-2">
+        <NotificationBell />
+        <Link
+          href="/email"
+          aria-label="E-mail"
+          className="flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <Mail className="h-5 w-5" />
+        </Link>
         <ModeToggle />
 
         <DropdownMenu>

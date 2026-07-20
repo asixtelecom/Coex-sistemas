@@ -8,9 +8,9 @@ import type {
   Conversation,
   Message,
   MessageReaction,
+  MessageTemplate,
   Contact,
   ConversationStatus,
-  MessageTemplate,
   Profile,
   Pipeline,
   PipelineStage,
@@ -47,6 +47,7 @@ import {
   type SendMediaPayload,
 } from "./message-composer";
 import { deleteAccountMedia } from "@/lib/storage/upload-media";
+import { ForwardModal } from "./forward-modal";
 import { TemplatePicker } from "./template-picker";
 import { buildReplyPreview } from "./reply-quote";
 import { DealCreateDialog, type DealFormData } from "./deal-create-dialog";
@@ -58,12 +59,6 @@ interface ReplyDraft {
   preview: string;
 }
 
-function renderTemplateBody(body: string, params: string[]): string {
-  return body.replace(/\{\{(\d+)\}\}/g, (_, raw) => {
-    const idx = Number(raw) - 1;
-    return params[idx] ?? `{{${raw}}}`;
-  });
-}
 
 interface MessageThreadProps {
   conversation: Conversation | null;
@@ -154,6 +149,13 @@ const STATUS_OPTIONS: { label: string; value: ConversationStatus; color: string 
 const DOODLE_BG_CLASSES =
   "bg-background bg-[url('/inbox-doodle.svg')] bg-repeat";
 
+function renderTemplateBody(body: string, params: string[]): string {
+  return body.replace(/\{\{(\d+)\}\}/g, (_, raw) => {
+    const idx = Number(raw) - 1;
+    return params[idx] ?? `{{${raw}}}`;
+  });
+}
+
 export function MessageThread({
   conversation,
   contact,
@@ -174,6 +176,8 @@ export function MessageThread({
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
+  const [forwardModalOpen, setForwardModalOpen] = useState(false);
+  const [forwardMessage, setForwardMessage] = useState<Message | null>(null);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [reactions, setReactions] = useState<MessageReaction[]>([]);
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
@@ -759,10 +763,6 @@ export function MessageThread({
             message_type: "template",
             template_name: template.name,
             template_language: template.language,
-            // Structured params drive the new send-builder path
-            // (header media + URL button substitution). Body values
-            // are mirrored under both shapes so the route can fall
-            // back if the template row isn't found locally.
             template_message_params: {
               body: values.body,
               headerText: values.headerText,
@@ -793,6 +793,11 @@ export function MessageThread({
     },
     [conversation, onNewMessage, onUpdateMessage],
   );
+
+  const handleForwardMessage = useCallback((msg: Message) => {
+    setForwardMessage(msg);
+    setForwardModalOpen(true);
+  }, []);
 
   // Build a quick id → Message map so reply quotes can be rendered without
   // an extra fetch — the thread already holds the full conversation.
@@ -1250,7 +1255,7 @@ export function MessageThread({
             >
               <GitBranch className="h-3 w-3" />
               <span className="hidden sm:inline">
-                {currentDeal ? currentDeal.title : "Tabular"}
+                {currentDeal ? currentDeal.title : ""}
               </span>
               <ChevronDown className="h-3 w-3" />
             </DropdownMenuTrigger>
@@ -1344,7 +1349,6 @@ export function MessageThread({
           <div className="flex flex-col items-center justify-center py-12">
             <p className="text-sm text-muted-foreground">Nenhuma mensagem ainda</p>
             <p className="text-xs text-muted-foreground">
-              Envie um modelo para iniciar a conversa
             </p>
           </div>
         ) : (
@@ -1370,6 +1374,13 @@ export function MessageThread({
                         }
                       : null;
                     const msgReactions = reactionsByMessageId.get(msg.id);
+                    // Resolve the agent profile for this message
+                    const senderProfile =
+                      msg.sender_type === "agent" || msg.sender_type === "bot"
+                        ? (msg.sender_id
+                            ? profiles.find((p) => p.user_id === msg.sender_id)
+                            : currentAssignee) ?? null
+                        : null;
                     // Toggle is computed at the call site — `msgReactions`
                     // and `user?.id` are already in scope, no extra hook.
                     const handlePillToggle = (emoji: string) => {
@@ -1389,6 +1400,7 @@ export function MessageThread({
                         onReact={(emoji) => {
                           if (emoji) void postReaction(msg.id, emoji);
                         }}
+                        onForward={() => handleForwardMessage(msg)}
                       >
                         <MessageBubble
                           message={msg}
@@ -1396,6 +1408,8 @@ export function MessageThread({
                           reactions={msgReactions}
                           currentUserId={user?.id}
                           onToggleReaction={handlePillToggle}
+                          agentAvatarUrl={senderProfile?.avatar_url}
+                          agentName={senderProfile?.full_name}
                         />
                       </MessageActions>
                     );
@@ -1418,10 +1432,18 @@ export function MessageThread({
         onClearReply={() => setReplyTo(null)}
       />
 
+
       <TemplatePicker
         open={templateModalOpen}
         onOpenChange={setTemplateModalOpen}
         onSelect={handleSendTemplate}
+      />
+
+      <ForwardModal
+        open={forwardModalOpen}
+        onOpenChange={setForwardModalOpen}
+        message={forwardMessage}
+        currentConversationId={conversation?.id}
       />
 
       <DealCreateDialog

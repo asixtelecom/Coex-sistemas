@@ -174,6 +174,16 @@ export interface Conversation {
   created_at: string;
   updated_at: string;
   contact?: Contact;
+  agents?: ConversationAgent[];
+}
+
+export interface ConversationAgent {
+  id: string;
+  conversation_id: string;
+  user_id: string;
+  assigned_by?: string;
+  created_at: string;
+  profile?: Profile;
 }
 
 export type SenderType = 'customer' | 'agent' | 'bot';
@@ -253,7 +263,7 @@ export interface WhatsAppConfig {
   /** Friendly name (e.g. "Alphaville"). */
   name?: string;
 }
-export type ChannelType = 'whatsapp' | 'instagram' | 'messenger' | 'telegram' | 'webchat' | 'linkedin';
+export type ChannelType = 'whatsapp' | 'instagram' | 'messenger' | 'telegram' | 'webchat' | 'linkedin' | 'tiktok' | 'youtube';
 
 export interface Channel {
   id: string;
@@ -354,6 +364,7 @@ export interface Deal {
   property_type?: string;
   origin_address?: string;
   destination_address?: string;
+  vistoria_id?: string;
   status?: DealStatus;
   created_at: string;
   updated_at?: string;

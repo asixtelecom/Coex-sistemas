@@ -18,7 +18,7 @@ interface UseRealtimeOptions {
   enabled?: boolean;
 }
 
-const POLL_INTERVAL_MS = 4000; // Poll every 4 seconds
+const POLL_INTERVAL_MS = 10000; // Poll every 4 seconds
 
 export function useRealtime({
   channelName,

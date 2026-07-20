@@ -8,6 +8,7 @@ import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { PedidoDetailSheet } from "@/components/pedidos/pedido-detail-sheet";
 import { DealForm } from "@/components/pipelines/deal-form";
 import { generatePedidoPDF } from "@/components/pedidos/pedido-pdf";
+import { ServiceBadges } from "@/components/ui/service-badges";
 import { Eye, Edit, Printer, Loader2, Search, X, ChevronDown, ChevronUp } from "lucide-react";
 
 function formatDate(dateStr: string | undefined | null): string {
@@ -385,7 +386,9 @@ export default function PedidosPage() {
                   <td className="max-w-[180px] truncate px-3 py-2.5 text-sm text-foreground">{deal.destination_address ?? "-"}</td>
                   <td className="whitespace-nowrap px-3 py-2.5 text-sm text-foreground">{formatDate(deal.created_at)}</td>
                   <td className="whitespace-nowrap px-3 py-2.5 text-sm text-foreground">{formatDate(deal.end_date)}</td>
-                  <td className="max-w-[140px] truncate px-3 py-2.5 text-sm text-foreground">{deal.title}</td>
+                  <td className="max-w-[140px] px-3 py-2.5 text-sm text-foreground">
+                    <ServiceBadges title={deal.title} maxDisplay={2} />
+                  </td>
                   <td className="whitespace-nowrap px-3 py-2.5 text-sm font-semibold text-primary">{formatCurrency(deal.value)}</td>
                   <td className="px-3 py-2.5">
                     <div className="flex items-center gap-0.5 opacity-60 group-hover:opacity-100 transition-opacity">

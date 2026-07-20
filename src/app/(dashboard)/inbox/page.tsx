@@ -156,6 +156,17 @@ function InboxPageInner() {
         .select("*, contact:contacts(*), channel:channels(*), assigned_agent:profiles!conversations_assigned_agent_id_fkey(*)")
         .eq("id", convId)
         .maybeSingle();
+
+      // Fetch agents for this conversation
+      if (data) {
+        const { data: agentRows } = await supabase
+          .from("conversation_agents")
+          .select("*")
+          .eq("conversation_id", convId);
+        if (agentRows) {
+          (data as any).agents = agentRows;
+        }
+      }
       if (error) {
         // Supabase errors have non-enumerable properties — log fields
         // explicitly so the console message isn't just `{}`.
@@ -182,7 +193,8 @@ function InboxPageInner() {
               ? { 
                   ...c, 
                   contact: c.contact ?? fetched.contact,
-                  assigned_agent: (c as any).assigned_agent ?? fetched.assigned_agent 
+                  assigned_agent: (c as any).assigned_agent ?? fetched.assigned_agent,
+                  agents: (fetched as any).agents ?? c.agents,
                 }
               : c,
           );
@@ -226,9 +238,10 @@ function InboxPageInner() {
         .from("whatsapp_config")
         .select("status")
         .eq("account_id", accountId)
-        .maybeSingle();
+        .limit(10);
 
-      setWhatsappConnected(data?.status === "connected");
+      const connected = Array.isArray(data) && data.some((r) => r.status === "connected");
+      setWhatsappConnected(connected);
     };
 
     checkConnection();
@@ -389,6 +402,7 @@ function InboxPageInner() {
                 ? {
                     ...c,
                     ...conv,
+                    agents: (c as any).agents,
                     unread_count: isActive ? 0 : conv.unread_count,
                   }
                 : c,
@@ -531,6 +545,8 @@ function InboxPageInner() {
       if (activeConversation?.id === conv.id) return;
       setActiveConversation(conv);
       setActiveContact(conv.contact ?? null);
+      // Auto-assign current user to conversation_agents
+      handleAutoAssign(conv.id);
       setMessages([]);
       // Optimistically clear the unread badge for this conv. The
       // server-side reset is fired by the unread-reset effect inside
@@ -612,41 +628,46 @@ function InboxPageInner() {
 
   const handleAssignChange = useCallback(
     async (conversationId: string, assignedAgentId: string | null) => {
+      // This callback is now called by conversation-list and message-thread
+      // after they directly manage conversation_agents. We just refresh local state.
+      // Trigger a resync to pick up the changes from DB.
+      setResyncToken((n) => n + 1);
+    },
+    []
+  );
+
+  // Auto-assign current user when they select a conversation
+  const handleAutoAssign = useCallback(
+    async (conversationId: string) => {
       try {
         const supabase = createClient();
-        const { error } = await supabase
-          .from("conversations")
-          .update({ assigned_agent_id: assignedAgentId })
-          .eq("id", conversationId);
-          
-        if (error) {
-          console.error("Failed to assign agent:", error);
-          toast.error("Erro ao atribuir agente");
-          return;
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) return;
+
+        // Upsert into conversation_agents (ignores if already assigned)
+        await supabase
+          .from("conversation_agents")
+          .upsert({
+            conversation_id: conversationId,
+            user_id: session.user.id,
+            assigned_by: session.user.id,
+          }, { onConflict: "conversation_id,user_id", ignoreDuplicates: true });
+
+        // Also update legacy assigned_agent_id if not set
+        const conv = conversations.find(c => c.id === conversationId);
+        if (conv && !conv.assigned_agent_id) {
+          await supabase
+            .from("conversations")
+            .update({ assigned_agent_id: session.user.id })
+            .eq("id", conversationId);
         }
-        
-        // Update local state
-        setConversations((prev) =>
-          prev.map((c) =>
-            c.id === conversationId
-              ? { ...c, assigned_agent_id: assignedAgentId ?? undefined }
-              : c
-          )
-        );
-        if (activeConversation?.id === conversationId) {
-          setActiveConversation((prev) =>
-            prev
-              ? { ...prev, assigned_agent_id: assignedAgentId ?? undefined }
-              : prev
-          );
-        }
-        toast.success("Agente atribuído com sucesso");
+
+        setResyncToken((n) => n + 1);
       } catch (err) {
-        console.error("Error assigning agent:", err);
-        toast.error("Erro ao atribuir agente");
+        console.error("Error auto-assigning:", err);
       }
     },
-    [activeConversation]
+    [conversations]
   );
 
   // On mobile (<lg) we show a SINGLE pane — either the list or the
@@ -687,6 +708,7 @@ function InboxPageInner() {
             onAssignChange={handleAssignChange}
             resyncToken={resyncToken}
             onDeselect={handleCloseConversation}
+            onAutoAssign={handleAutoAssign}
           />
         </div>
 

@@ -71,9 +71,8 @@ export function EmailCompose({ mailboxId, onClose, onSend, initialTo, initialSub
     fetch()
   }, [])
 
-  // Append agent signature when replying/forwarding
+  // Append agent signature on compose (reply/forward AND new email)
   useEffect(() => {
-    if (!initialTo || !initialMessage) return
     const appendSignature = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
@@ -111,10 +110,15 @@ export function EmailCompose({ mailboxId, onClose, onSend, initialTo, initialSub
         // column may not exist yet
       }
 
-      setMessage((prev) => prev + `\n\n${sig.replace(/\{nome\}/gi, agentName || "").replace(/\{telefone\}/gi, companyPhone)}`)
+      const sigText = sig.replace(/\{nome\}/gi, agentName || "").replace(/\{telefone\}/gi, companyPhone)
+      setMessage((prev) => {
+        // Don't double-append if signature already present
+        if (prev.includes(sigText)) return prev
+        return prev + `\n\n${sigText}`
+      })
     }
     appendSignature()
-  }, [initialTo, initialMessage])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])

@@ -26,11 +26,14 @@ import {
   Workflow,
   X,
   Zap,
+  ClipboardCheck,
   ClipboardList,
   Calendar,
   CreditCard,
   FileSignature,
   Archive,
+  Warehouse,
+
 } from "lucide-react";
 import type { AccountRole } from "@/lib/auth/roles";
 
@@ -60,6 +63,12 @@ const ROLE_CHIP: Record<
     icon: UserCog,
     label: "Agente",
     // Neutral slate: the operational default.
+    className:
+      "border-border bg-muted text-foreground",
+  },
+  vistoria: {
+    icon: User,
+    label: "Vistoria",
     className:
       "border-border bg-muted text-foreground",
   },
@@ -102,8 +111,10 @@ const navItems: NavItem[] = [
   { href: "/email", label: "E-mail", icon: Mail },
   { href: "/pagamentos", label: "Pagamentos", icon: CreditCard },
   { href: "/assinaturas", label: "Assinaturas", icon: FileSignature },
-  { href: "/agenda", label: "Vistoria", icon: Calendar },
-  { href: "/almoxerifado", label: "Almoxerifado", icon: Archive },
+  { href: "/agenda", label: "Agenda", icon: Calendar },
+  { href: "/vistoria", label: "Vistorias", icon: ClipboardCheck },
+  { href: "/estoque", label: "Estoque", icon: Archive },
+  { href: "/guarda-volume", label: "Storage", icon: Warehouse },
   { href: "/contacts", label: "Contatos", icon: Users },
   { href: "/pipelines", label: "Funil de Vendas", icon: GitBranch },
   { href: "/broadcasts", label: "Transmissões", icon: Radio },
@@ -118,7 +129,7 @@ const bottomNavItems = (() => {
   // We'll filter it inside the component where canEditSettings is available.
   // For now keep all items - filtering happens in the render.
   return [
-    { href: "/settings", label: "Configurações", icon: Settings },
+    { href: "/settings?tab=overview", label: "Configurações", icon: Settings },
   ] as const;
 })() satisfies readonly NavItem[];
 
@@ -132,6 +143,20 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
   const pathname = usePathname();
   const { profile, profileLoading, account, accountRole, canEditSettings, canEditOwnProfile, signOut } = useAuth();
   const { mode } = useTheme();
+
+  // Parse ?c=<conversationId> from the URL so the sidebar dot can
+  // exclude the conversation the user is currently reading — avoids
+  // flickering the dot when a new message lands in the active thread.
+  const [activeConvId, setActiveConvId] = useState<string | null>(null);
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      setActiveConvId(params.get("c"));
+    } catch {
+      setActiveConvId(null);
+    }
+  }, [pathname]);
+
   const totalUnread = useTotalUnread();
 const [collapsed, setCollapsed] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -214,7 +239,7 @@ const [collapsed, setCollapsed] = useState(() => {
       <aside
         className={cn(
           // Mobile: fixed drawer that slides in from the left.
-          "fixed inset-y-0 left-0 z-40 flex h-full w-64 flex-col border-r border-border bg-card",
+          "fixed inset-y-0 left-0 z-40 flex h-full w-64 flex-col border-r border-border/30 bg-transparent",
           "transition-transform duration-200 ease-out will-change-transform",
           open ? "translate-x-0" : "-translate-x-full",
           // Desktop: static, always visible — reset all the mobile framing.
@@ -225,13 +250,21 @@ const [collapsed, setCollapsed] = useState(() => {
       >
         {/* Logo row. On mobile we put a close button here; on desktop the
             close button is hidden since the sidebar is always-visible. */}
-        <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border px-4">
+        <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border/30 px-4">
           <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <MessageSquare className="h-4 w-4" />
-            </div>
+            {account?.logo_url ? (
+              <img
+                src={account.logo_url}
+                alt={account.name || "Logo"}
+                className="h-8 w-8 shrink-0 rounded-lg object-contain"
+              />
+            ) : (
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                <MessageSquare className="h-4 w-4" />
+              </div>
+            )}
             <span className={cn("text-sm font-semibold text-foreground transition-opacity duration-200", collapsed && "lg:hidden")}>
-              Coex Sistemas CRM
+              {account?.name || "Coex Sistemas CRM"}
             </span>
           </Link>
           <button
@@ -253,7 +286,7 @@ const [collapsed, setCollapsed] = useState(() => {
                 (item.href !== "/dashboard" && pathname.startsWith(item.href));
 
               const showUnreadDot =
-                item.href === "/inbox" && totalUnread > 0 && !isActive;
+                item.href === "/inbox" && totalUnread > 0;
 
               return (
                 <li key={item.href}>
@@ -264,7 +297,7 @@ const [collapsed, setCollapsed] = useState(() => {
                       collapsed && "lg:justify-center lg:px-2 lg:relative",
                       isActive
                         ? "bg-primary/10 text-primary"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                        : "text-foreground/70 hover:bg-muted hover:text-foreground",
                     )}
                     title={collapsed ? item.label : undefined}
                   >
@@ -300,7 +333,7 @@ const [collapsed, setCollapsed] = useState(() => {
             })}
           </ul>
 
-          <div className="my-4 border-t border-border" />
+          <div className="my-4 border-t border-border/30" />
 
               <ul className="flex flex-col gap-1">
             {bottomNavItems.filter((_item) => canEditSettings).map((item) => {
@@ -314,7 +347,7 @@ const [collapsed, setCollapsed] = useState(() => {
                       collapsed && "lg:justify-center lg:px-2",
                       isActive
                         ? "bg-primary/10 text-primary"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                        : "text-foreground/70 hover:bg-muted hover:text-foreground",
                     )}
                     title={collapsed ? item.label : undefined}
                   >
@@ -345,7 +378,7 @@ const [collapsed, setCollapsed] = useState(() => {
         </nav>
 
         {/* User section */}
-        <div className="shrink-0 border-t border-border p-3">
+        <div className="shrink-0 border-t border-border/30 p-3">
           {/* Account name display — surfaced only when the account
               name differs from the user's own name (see
               `showAccountStrip`). For a default solo account the two
@@ -426,7 +459,7 @@ const [collapsed, setCollapsed] = useState(() => {
                 <DropdownMenuItem
                   render={
                     <Link
-                      href="/settings?tab=whatsapp"
+                      href="/settings?tab=overview"
                       onClick={onClose}
                       className="text-popover-foreground focus:bg-accent focus:text-accent-foreground"
                     />

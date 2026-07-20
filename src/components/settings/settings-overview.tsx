@@ -27,6 +27,7 @@ interface OverviewCounts {
 
 interface ChannelStatus {
   configured: boolean;
+  count?: number;
 }
 
 export function SettingsOverview({
@@ -42,6 +43,7 @@ export function SettingsOverview({
   const [countsLoading, setCountsLoading] = useState(true);
   // Channel statuses
   const [whatsapp, setWhatsapp] = useState<ChannelStatus | null>(null);
+  const [whatsappCount, setWhatsappCount] = useState<number>(0);
   const [whatsappLoading, setWhatsappLoading] = useState(true);
   const [instagram, setInstagram] = useState<ChannelStatus | null>(null);
   const [instagramLoading, setInstagramLoading] = useState(true);
@@ -128,39 +130,54 @@ export function SettingsOverview({
       setWebchatLoading(true);
       setLinkedinLoading(true);
       
+      const safeQuery = (promise: Promise<unknown>) =>
+        promise.then((r) => r).catch(() => ({ data: null, error: true, count: null }));
+
       const [whatsappRow, instagramRow, messengerRow, telegramRow, webchatRow] = 
         await Promise.allSettled([
-          supabase
-            .from('whatsapp_config')
-            .select('phone_number_id')
-            .eq('account_id', acctId)
-            .maybeSingle(),
-          supabase
-            .from('instagram_config')
-            .select('page_id')
-            .eq('account_id', acctId)
-            .maybeSingle(),
-          supabase
-            .from('messenger_config')
-            .select('page_id')
-            .eq('account_id', acctId)
-            .maybeSingle(),
-          supabase
-            .from('telegram_config')
-            .select('bot_token')
-            .eq('account_id', acctId)
-            .maybeSingle(),
-          supabase
-            .from('webchat_config')
-            .select('token')
-            .eq('account_id', acctId)
-            .maybeSingle(),
+          safeQuery(
+            supabase
+              .from('whatsapp_config')
+              .select('id', { count: 'exact', head: true })
+              .eq('account_id', acctId)
+          ),
+          safeQuery(
+            supabase
+              .from('instagram_config')
+              .select('page_id')
+              .eq('account_id', acctId)
+              .maybeSingle()
+          ),
+          safeQuery(
+            supabase
+              .from('messenger_config')
+              .select('page_id')
+              .eq('account_id', acctId)
+              .maybeSingle()
+          ),
+          safeQuery(
+            supabase
+              .from('telegram_config')
+              .select('bot_token')
+              .eq('account_id', acctId)
+              .maybeSingle()
+          ),
+          safeQuery(
+            supabase
+              .from('webchat_config')
+              .select('token')
+              .eq('account_id', acctId)
+              .maybeSingle()
+          ),
         ]);
       
       if (cancelled) return;
 
+      const waCount = whatsappRow.status === 'fulfilled' ? (whatsappRow.value.count ?? 0) : 0;
+      setWhatsappCount(waCount);
       setWhatsapp({
-        configured: whatsappRow.status === 'fulfilled' && !!whatsappRow.value.data?.phone_number_id,
+        configured: waCount > 0,
+        count: waCount,
       });
       setWhatsappLoading(false);
 
@@ -205,9 +222,16 @@ export function SettingsOverview({
   const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
   // Helper to get channel subtitle
-  const getChannelSubtitle = (status: ChannelStatus | null) => {
+  const getChannelSubtitle = (status: ChannelStatus | null, count?: number) => {
     if (!status?.configured) {
       return 'Não configurado';
+    }
+    if (count != null && count > 0) {
+      return (
+        <>
+          <StatusDot tone="ok" /> {count} Canal{count === 1 ? '' : 'eis'} conectado{count === 1 ? '' : 's'}
+        </>
+      );
     }
     return (
       <>
@@ -226,7 +250,7 @@ export function SettingsOverview({
     {
       section: 'whatsapp',
       loading: whatsappLoading,
-      subtitle: whatsappLoading ? null : getChannelSubtitle(whatsapp),
+      subtitle: whatsappLoading ? null : getChannelSubtitle(whatsapp, whatsappCount),
     },
     {
       section: 'instagram',

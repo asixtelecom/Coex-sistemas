@@ -1,8 +1,10 @@
 import {
   Banknote,
   Box,
+  Phone,
   Camera,
   Coins,
+  Database,
   FileText,
   Globe,
   LayoutGrid,
@@ -15,6 +17,8 @@ import {
   Tags,
   User,
   UsersRound,
+  Video,
+  Music,
   type LucideIcon,
 } from "lucide-react"
 
@@ -37,6 +41,10 @@ export const SETTINGS_SECTIONS = [
   "deals",
   "members",
   "cubagem",
+  "backup",
+  "telefonia",
+  "tiktok",
+  "youtube",
 ] as const
 
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]
@@ -69,12 +77,28 @@ export const SECTION_META: Record<SettingsSection, SectionMeta> = {
   deals: { id: "deals", label: "Negócios e moeda", icon: Coins, group: "workspace" },
   members: { id: "members", label: "Membros da equipe", icon: UsersRound, group: "workspace" },
   cubagem: { id: "cubagem", label: "Inventários", icon: Box, group: "workspace" },
+  backup: { id: "backup", label: "Backup", icon: Database, group: "workspace" },
+  telefonia: { id: "telefonia", label: "Telefonia", icon: Phone, group: "workspace" },
+  tiktok: { id: "tiktok", label: "TikTok", icon: Music, group: "workspace" },
+  youtube: { id: "youtube", label: "YouTube", icon: Video, group: "workspace" },
 }
 
 export const AGENT_SECTIONS: readonly SettingsSection[] = [
   "overview",
   "profile",
   "security",
+] as const
+
+/** Channel sections grouped under the "Canais" dropdown in the rail. */
+export const CHANNEL_SECTIONS: readonly SettingsSection[] = [
+  "whatsapp",
+  "instagram",
+  "messenger",
+  "telegram",
+  "webchat",
+  "linkedin",
+  "tiktok",
+  "youtube",
 ] as const
 
 export const RAIL_GROUPS: { label: string | null; group: SectionMeta["group"] }[] = [

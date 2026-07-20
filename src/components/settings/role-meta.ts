@@ -1,4 +1,5 @@
 import {
+  ClipboardCheck,
   Crown,
   Shield,
   UserCog,
@@ -39,6 +40,12 @@ export const ROLE_META: Record<
     label: 'Agente',
     variant: 'muted',
     className: 'border-border bg-muted text-muted-foreground',
+  },
+  vistoria: {
+    icon: ClipboardCheck,
+    label: 'Vistoria',
+    variant: 'muted',
+    className: 'border-sky-500/40 bg-sky-500/10 text-sky-400',
   },
   viewer: {
     icon: UserIcon,

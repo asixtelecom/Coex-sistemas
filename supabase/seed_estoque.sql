@@ -1,6 +1,6 @@
--- Seed para almoxarifado_items
+-- Seed para estoque_items
 -- Insere 10 unidades de cada item
--- ATENÇÃO: rode somente após a migration 045 ter sido aplicada
+-- ATENÇÃO: rode somente após a migration 050 ter sido aplicada
 
 -- Ajuste o ACCOUNT_ID para o UUID da sua conta
 -- Para obter o account_id: SELECT id FROM accounts LIMIT 1;
@@ -8,7 +8,7 @@
 WITH account AS (
   SELECT id FROM accounts LIMIT 1
 )
-INSERT INTO almoxarifado_items (account_id, name, quantity, unit, min_stock, location)
+INSERT INTO estoque_items (account_id, name, quantity, unit, min_stock, location)
 SELECT
   (SELECT id FROM account),
   name,

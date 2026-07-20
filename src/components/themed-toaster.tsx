@@ -36,8 +36,8 @@ export function ThemedToaster() {
   const { mode } = useTheme();
   const isClient = useIsClient();
   const sonnerTheme = isClient
-    ? (mode === "graphite" ? "dark" : mode)
-    : (DEFAULT_MODE === "graphite" ? "dark" : DEFAULT_MODE);
+    ? (mode === "graphite" || mode === "lite" || mode === "whatsapp" ? "dark" : mode)
+    : (DEFAULT_MODE === "graphite" || DEFAULT_MODE === "lite" || DEFAULT_MODE === "whatsapp" ? "dark" : DEFAULT_MODE);
   return (
     <Toaster
       theme={sonnerTheme}
