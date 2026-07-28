@@ -30,6 +30,7 @@ import {
   Plus,
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
+import { formatPhoneBR } from "@/lib/whatsapp/phone-utils";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
@@ -272,11 +273,11 @@ export function MessageThread({
 
         // Create default stages for this new pipeline
         const defaultStages = [
-          { name: "Contato", color: "#3b82f6", position: 0 },
-          { name: "Qualificação", color: "#8b5cf6", position: 1 },
-          { name: "Proposta", color: "#f59e0b", position: 2 },
-          { name: "Negociação", color: "#ef4444", position: 3 },
-          { name: "Fechamento", color: "#10b981", position: 4 },
+          { name: "Novo", color: "#3b82f6", position: 0 },
+          { name: "Qualificado", color: "#eab308", position: 1 },
+          { name: "Orçamento enviado", color: "#f97316", position: 2 },
+          { name: "Negociando", color: "#8b5cf6", position: 3 },
+          { name: "Ganho", color: "#22c55e", position: 4 },
         ];
 
         const stagesToInsert = defaultStages.map(stage => ({
@@ -818,7 +819,7 @@ export function MessageThread({
     return map;
   }, [reactions]);
 
-  const contactDisplayName = contact?.name || contact?.phone || "Cliente";
+  const contactDisplayName = contact?.name || formatPhoneBR(contact?.phone || "") || "Cliente";
 
   // Author label for a quoted message: "You" when we sent the parent,
   // contact name when the customer sent it.
@@ -980,6 +981,45 @@ export function MessageThread({
     [conversation, contact, pipelines, pendingStageId],
   );
 
+  const handleSaveDealInfo = useCallback(
+    async (formData: DealFormData) => {
+      if (!contact) return;
+
+      const supabase = createClient();
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userId = sessionData.session?.user.id;
+      if (!userId) return;
+
+      // Save as a note on the contact
+      const noteText = [
+        formData.serviceType && `Tipo: ${formData.serviceType}`,
+        formData.originAddress && `Origem: ${formData.originAddress}`,
+        formData.destinationAddress && `Destino: ${formData.destinationAddress}`,
+        formData.movingDate && `Data: ${formData.movingDate}`,
+      ].filter(Boolean).join('\n');
+
+      if (noteText) {
+        const { error } = await supabase
+          .from("contact_notes")
+          .insert({
+            contact_id: contact.id,
+            account_id: conversation?.account_id,
+            user_id: userId,
+            note_text: noteText,
+          });
+
+        if (error) {
+          console.error("Failed to save deal info:", error);
+          toast.error("Falha ao salvar informações");
+          return;
+        }
+      }
+
+      toast.success("Informações salvas com sucesso!");
+    },
+    [contact, conversation],
+  );
+
   const handleLinkDeal = useCallback(
     async (dealId: string | null) => {
       if (!conversation) return;
@@ -1099,7 +1139,7 @@ export function MessageThread({
                 </span>
               )}
             </h2>
-            <p className="truncate text-xs text-muted-foreground">{contact.phone}</p>
+            <p className="truncate text-xs text-muted-foreground">{formatPhoneBR(contact.phone)}</p>
           </div>
           {/* Session timer badge — hidden on the narrowest phones so
               the name + back arrow keep their room. */}
@@ -1374,7 +1414,9 @@ export function MessageThread({
                         }
                       : null;
                     const msgReactions = reactionsByMessageId.get(msg.id);
-                    // Resolve the agent profile for this message
+                    // Resolve the agent profile for this message when
+                    // sender_id is available (team workspaces), otherwise
+                    // fall back to the conversation's assigned agent.
                     const senderProfile =
                       msg.sender_type === "agent" || msg.sender_type === "bot"
                         ? (msg.sender_id
@@ -1449,8 +1491,9 @@ export function MessageThread({
       <DealCreateDialog
         open={dealDialogOpen}
         onOpenChange={setDealDialogOpen}
-        contactName={contact?.name || contact?.phone || "Cliente"}
+        contactName={contact?.name || formatPhoneBR(contact?.phone || "") || "Cliente"}
         onSubmit={handleCreateAndLinkDeal}
+        onSave={handleSaveDealInfo}
       />
     </div>
   );

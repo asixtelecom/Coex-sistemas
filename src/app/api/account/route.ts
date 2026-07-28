@@ -37,15 +37,12 @@ export async function GET() {
 }
 
 const MAX_NAME_LEN = 80;
+const MAX_COMPANY_LEN = 100;
 
 export async function PATCH(request: Request) {
   try {
     const ctx = await requireRole("admin");
 
-    // Per-user limit on admin-class mutations. Bounds accidental
-    // abuse (script run in a loop) and a compromised admin session
-    // spamming renames. Each admin endpoint keys its own bucket so
-    // one route doesn't starve another.
     const limit = checkRateLimit(
       `admin:rename:${ctx.userId}`,
       RATE_LIMITS.adminAction,
@@ -53,39 +50,76 @@ export async function PATCH(request: Request) {
     if (!limit.success) return rateLimitResponse(limit);
 
     const body = (await request.json().catch(() => null)) as
-      | { name?: unknown }
+      | { name?: unknown; company_name?: unknown; logo_url?: unknown }
       | null;
-    const rawName = body?.name;
 
-    if (typeof rawName !== "string") {
+    const updates: Record<string, string | null> = {};
+
+    // Account name (optional)
+    if (body?.name !== undefined) {
+      if (typeof body.name !== "string") {
+        return NextResponse.json(
+          { error: "'name' must be a string" },
+          { status: 400 },
+        );
+      }
+      const name = body.name.trim();
+      if (name.length === 0) {
+        return NextResponse.json(
+          { error: "Account name cannot be empty" },
+          { status: 400 },
+        );
+      }
+      if (name.length > MAX_NAME_LEN) {
+        return NextResponse.json(
+          { error: `Account name must be ${MAX_NAME_LEN} characters or fewer` },
+          { status: 400 },
+        );
+      }
+      updates.name = name;
+    }
+
+    // Company name (optional)
+    if (body?.company_name !== undefined) {
+      if (typeof body.company_name !== "string") {
+        return NextResponse.json(
+          { error: "'company_name' must be a string" },
+          { status: 400 },
+        );
+      }
+      const companyName = body.company_name.trim();
+      if (companyName.length > MAX_COMPANY_LEN) {
+        return NextResponse.json(
+          { error: `Company name must be ${MAX_COMPANY_LEN} characters or fewer` },
+          { status: 400 },
+        );
+      }
+      updates.company_name = companyName || null;
+    }
+
+    // Logo URL (optional, null to clear)
+    if (body?.logo_url !== undefined) {
+      if (body.logo_url !== null && typeof body.logo_url !== "string") {
+        return NextResponse.json(
+          { error: "'logo_url' must be a string or null" },
+          { status: 400 },
+        );
+      }
+      updates.logo_url = body.logo_url || null;
+    }
+
+    if (Object.keys(updates).length === 0) {
       return NextResponse.json(
-        { error: "'name' must be a string" },
+        { error: "No fields to update" },
         { status: 400 },
       );
     }
 
-    const name = rawName.trim();
-    if (name.length === 0) {
-      return NextResponse.json(
-        { error: "Account name cannot be empty" },
-        { status: 400 },
-      );
-    }
-    if (name.length > MAX_NAME_LEN) {
-      return NextResponse.json(
-        { error: `Account name must be ${MAX_NAME_LEN} characters or fewer` },
-        { status: 400 },
-      );
-    }
-
-    // RLS allows this UPDATE because accounts_update requires
-    // `is_account_member(id, 'admin')`, and requireRole already
-    // guaranteed the caller is admin+.
     const { data, error } = await ctx.supabase
       .from("accounts")
-      .update({ name })
+      .update(updates)
       .eq("id", ctx.accountId)
-      .select("id, name")
+      .select("id, name, company_name, logo_url")
       .single();
 
     if (error) {

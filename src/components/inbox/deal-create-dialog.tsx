@@ -20,6 +20,7 @@ interface DealCreateDialogProps {
   onOpenChange: (open: boolean) => void
   contactName: string
   onSubmit: (data: DealFormData) => void
+  onSave?: (data: DealFormData) => void
 }
 
 export interface DealFormData {
@@ -34,6 +35,7 @@ export function DealCreateDialog({
   onOpenChange,
   contactName,
   onSubmit,
+  onSave,
 }: DealCreateDialogProps) {
   const [selectedServices, setSelectedServices] = useState<string[]>([])
   const [originAddress, setOriginAddress] = useState("")
@@ -46,6 +48,17 @@ export function DealCreateDialog({
     setDestinationAddress("")
     setMovingDate("")
     setSelectedServices([])
+    onOpenChange(false)
+  }
+
+  const handleSave = () => {
+    if (onSave) {
+      onSave({ serviceType, originAddress, destinationAddress, movingDate })
+    }
+    setOriginAddress("")
+    setDestinationAddress("")
+    setMovingDate("")
+    setServiceType("")
     onOpenChange(false)
   }
 
@@ -104,6 +117,12 @@ export function DealCreateDialog({
             Cancelar
           </Button>
           <Button onClick={handleSubmit} disabled={selectedServices.length === 0}>Criar Negócio</Button>
+          {onSave && (
+            <Button variant="secondary" onClick={handleSave}>
+              Salvar
+            </Button>
+          )}
+          <Button onClick={handleSubmit} disabled={!serviceType}>Criar Negócio</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

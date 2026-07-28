@@ -472,6 +472,7 @@ export async function findOrCreateContact(
         }
         return { contact: raced, wasCreated: false }
       }
+      if (raced) return { contact: raced, wasCreated: false }
     }
     console.error('Error creating contact:', createError)
     return null

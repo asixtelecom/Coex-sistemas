@@ -159,7 +159,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
     }
   }, [pathname]);
 
-  const totalUnread = useTotalUnread();
+  const totalUnread = useTotalUnread(activeConvId);
 const [collapsed, setCollapsed] = useState(() => {
     if (typeof window === "undefined") return false;
     return localStorage.getItem("sidebar-collapsed") === "true";
@@ -257,7 +257,7 @@ const [collapsed, setCollapsed] = useState(() => {
             {account?.logo_url ? (
               <img
                 src={account.logo_url}
-                alt={account.name || "Logo"}
+                alt={account.company_name || "Logo"}
                 className="h-8 w-8 shrink-0 rounded-lg object-contain"
               />
             ) : (
@@ -266,7 +266,7 @@ const [collapsed, setCollapsed] = useState(() => {
               </div>
             )}
             <span className={cn("text-sm font-semibold text-foreground transition-opacity duration-200", collapsed && "lg:hidden")}>
-              {account?.name || "Coex Sistemas CRM"}
+              {account?.company_name || "Coex Sistemas CRM"}
             </span>
           </Link>
           <button

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Conversation } from "@/types";
 
@@ -12,19 +12,32 @@ import type { Conversation } from "@/types";
  * Lives on its own realtime channel (distinct from the inbox page's
  * "inbox-realtime") so both can coexist without sharing state.
  */
-export function useTotalUnread(): number {
+export function useTotalUnread(
+  excludeConversationId?: string | null,
+): number {
   const [total, setTotal] = useState(0);
 
-  // Keep a live local mirror of {id: unread_count} so INSERT/UPDATE/DELETE
-  // events can adjust the total in O(1) without refetching.
+  const excludeRef = useRef(excludeConversationId);
+  useEffect(() => {
+    excludeRef.current = excludeConversationId;
+  });
+
   const countsRef = useRef<Map<string, number>>(new Map());
+
+  const recompute = useCallback(() => {
+    const map = countsRef.current;
+    const excludeId = excludeRef.current;
+    let sum = 0;
+    for (const [id, n] of map) {
+      if (n > 0 && id !== excludeId) sum += 1;
+    }
+    setTotal(sum);
+  }, []);
 
   useEffect(() => {
     const supabase = createClient();
     let cancelled = false;
 
-    // Initial load. RLS scopes this to the signed-in user automatically —
-    // no explicit user_id filter needed here.
     (async () => {
       const { data, error } = await supabase
         .from("conversations")
@@ -32,14 +45,11 @@ export function useTotalUnread(): number {
       if (cancelled || error || !data) return;
 
       const map = new Map<string, number>();
-      let sum = 0;
       for (const row of data as { id: string; unread_count: number }[]) {
-        const n = row.unread_count ?? 0;
-        map.set(row.id, n);
-        if (n > 0) sum += 1;
+        map.set(row.id, row.unread_count ?? 0);
       }
       countsRef.current = map;
-      setTotal(sum);
+      recompute();
     })();
 
     const channel = supabase
@@ -56,10 +66,7 @@ export function useTotalUnread(): number {
             const row = payload.new as Conversation;
             map.set(row.id, row.unread_count ?? 0);
           }
-          // Recompute — cheap, conversations per user stay small.
-          let sum = 0;
-          for (const n of map.values()) if (n > 0) sum += 1;
-          setTotal(sum);
+          recompute();
         },
       )
       .subscribe();
@@ -68,7 +75,7 @@ export function useTotalUnread(): number {
       cancelled = true;
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [recompute]);
 
   return total;
 }

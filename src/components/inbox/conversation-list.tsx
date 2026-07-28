@@ -17,6 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/hooks/use-auth";
+import { formatPhoneBR } from "@/lib/whatsapp/phone-utils";
 
 interface ConversationListProps {
   activeConversationId: string | null;
@@ -506,7 +507,7 @@ function UnreadByRecipientSection({
   return (
     <div className="flex flex-col">
       {unreadConvs.slice(0, 5).map((conv) => {
-        const displayName = conv.contact?.name || conv.contact?.phone || 'Desconhecido'
+        const displayName = conv.contact?.name || formatPhoneBR(conv.contact?.phone || '') || 'Desconhecido'
         const initials = displayName.charAt(0).toUpperCase()
         return (
           <button
@@ -563,7 +564,7 @@ function ConversationItem({
   isSearching = false,
 }: ConversationItemProps) {
   const contact = conversation.contact;
-  const displayName = contact?.name || contact?.phone || "Desconhecido";
+  const displayName = contact?.name || formatPhoneBR(contact?.phone || "") || "Desconhecido";
   const initials = displayName.charAt(0).toUpperCase();
   const assignedAgent = conversation.assigned_agent;
 
@@ -633,6 +634,20 @@ function ConversationItem({
               <span className="truncate text-sm font-medium text-foreground flex items-center gap-1.5">
                 {displayName}
 
+                {conversation.channel?.type === 'whatsapp' && (
+                  <span className="shrink-0 rounded-md bg-primary/10 px-1 py-0.5 text-[10px] font-medium text-primary leading-none">
+                    {(() => {
+                      const ch = conversation.channel
+                      if (!ch) return ''
+                      const dp = ch.config && typeof ch.config === 'object' && !Array.isArray(ch.config)
+                        ? (ch.config as Record<string, unknown>).display_phone as string | undefined
+                        : undefined
+                      return dp
+                        ? dp.replace(/\D/g, '').slice(-2)
+                        : ch.name?.slice(0, 2) || ''
+                    })()}
+                  </span>
+                )}
               </span>
               <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo}</span>
             </div>
@@ -722,6 +737,7 @@ function ConversationItem({
               ) : (
                 <User className="h-3 w-3" />
               )}
+              <span>{assignedAgent.full_name || assignedAgent.email}</span>
               <ChevronDown className="h-2 w-2" />
             </DropdownMenuTrigger>
             <DropdownMenuContent className="border-border bg-popover">

@@ -28,15 +28,15 @@ BEGIN
 
   -- Default pipeline
   INSERT INTO public.pipelines (name, account_id, user_id)
-  VALUES ('Sales Pipeline', v_account_id, NEW.id)
+  VALUES ('Funil de Vendas', v_account_id, NEW.id)
   RETURNING id INTO v_pipeline_id;
 
   INSERT INTO public.pipeline_stages (pipeline_id, name, position, color) VALUES
-    (v_pipeline_id, 'New Lead',      0, '#3b82f6'),
-    (v_pipeline_id, 'Qualified',     1, '#eab308'),
-    (v_pipeline_id, 'Proposal Sent', 2, '#f97316'),
-    (v_pipeline_id, 'Negotiation',   3, '#8b5cf6'),
-    (v_pipeline_id, 'Won',           4, '#22c55e');
+    (v_pipeline_id, 'Novo',               0, '#3b82f6'),
+    (v_pipeline_id, 'Qualificado',        1, '#eab308'),
+    (v_pipeline_id, 'Orçamento enviado',  2, '#f97316'),
+    (v_pipeline_id, 'Negociando',         3, '#8b5cf6'),
+    (v_pipeline_id, 'Ganho',              4, '#22c55e');
 
   RETURN NEW;
 EXCEPTION WHEN OTHERS THEN
@@ -47,7 +47,7 @@ $function$;
 
 -- 2. Backfill pipelines for existing accounts that have none
 INSERT INTO public.pipelines (name, account_id, user_id)
-SELECT 'Sales Pipeline', a.id, a.owner_user_id
+SELECT 'Funil de Vendas', a.id, a.owner_user_id
 FROM public.accounts a
 WHERE NOT EXISTS (SELECT 1 FROM public.pipelines p WHERE p.account_id = a.id);
 
@@ -56,11 +56,11 @@ INSERT INTO public.pipeline_stages (pipeline_id, name, position, color)
 SELECT p.id, s.name, s.position, s.color
 FROM public.pipelines p
 CROSS JOIN (VALUES
-  ('New Lead',      0, '#3b82f6'),
-  ('Qualified',     1, '#eab308'),
-  ('Proposal Sent', 2, '#f97316'),
-  ('Negotiation',   3, '#8b5cf6'),
-  ('Won',           4, '#22c55e')
+  ('Novo',               0, '#3b82f6'),
+  ('Qualificado',        1, '#eab308'),
+  ('Orçamento enviado',  2, '#f97316'),
+  ('Negociando',         3, '#8b5cf6'),
+  ('Ganho',              4, '#22c55e')
 ) AS s(name, position, color)
 WHERE NOT EXISTS (
   SELECT 1 FROM public.pipeline_stages ps

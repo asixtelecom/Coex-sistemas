@@ -13,7 +13,7 @@ function formatCurrency(value: number | undefined | null): string {
   return "R$ " + Number(value).toFixed(2).replace(".", ",");
 }
 
-export async function generatePedidoPDF(deal: Deal) {
+export async function generatePedidoPDF(deal: Deal, companyName?: string) {
   const doc = new jsPDF("p", "mm", "a4");
   const pw = doc.internal.pageSize.getWidth();
   const ph = doc.internal.pageSize.getHeight();
@@ -35,7 +35,7 @@ export async function generatePedidoPDF(deal: Deal) {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(13);
   doc.setTextColor(dark[0], dark[1], dark[2]);
-  doc.text("Coex Sistemas CRM", m + 12, y + 6);
+  doc.text(companyName || "Coex Sistemas CRM", m + 12, y + 6);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
@@ -184,14 +184,14 @@ export async function generatePedidoPDF(deal: Deal) {
   doc.text("Assinatura do Cliente", m, sigY + 5);
   doc.text(deal.contact?.name ?? "", m, sigY + 10);
   doc.text("Assinatura da Empresa", pw - m - 70, sigY + 5);
-  doc.text("Coex Sistemas", pw - m - 70, sigY + 10);
+  doc.text(companyName || "Coex Sistemas", pw - m - 70, sigY + 10);
 
   // ── FOOTER ──
   doc.setFont("helvetica", "italic");
   doc.setFontSize(7);
   doc.setTextColor(muted[0], muted[1], muted[2]);
   doc.text(
-    "Coex Sistemas CRM  |  Gerado em " + new Date().toLocaleString("pt-BR"),
+    (companyName || "Coex Sistemas CRM") + "  |  Gerado em " + new Date().toLocaleString("pt-BR"),
     pw / 2,
     ph - 8,
     { align: "center" }

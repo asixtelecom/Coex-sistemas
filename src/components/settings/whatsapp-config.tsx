@@ -139,6 +139,7 @@ export function WhatsAppConfig() {
       const payload: Record<string, unknown> = {
         phone_number_id: formPhoneNumberId.trim(),
         waba_id: formWabaId.trim() || null,
+        verify_token: formVerifyToken.trim() || null,
         pin: formPin.trim() || null,
         display_phone: formDisplayPhone.trim() || null,
         name: formName.trim() || null,
@@ -453,6 +454,11 @@ function ConfigCard({
     : config.phone_number_id.slice(-2);
 
   const webhookUrl = (typeof window !== 'undefined' ? window.location.origin : '') + '/api/whatsapp/webhook/2c583634-158f-4da7-b80f-22802b2a45cd';
+  const webhookUrl = config.webhook_url || (
+    typeof window !== 'undefined'
+      ? `${window.location.origin}/api/whatsapp/webhook/${config.channel_token}`
+      : ''
+  );
 
   return (
     <Card className="relative">
@@ -522,6 +528,7 @@ function ConfigCard({
         {/* Webhook URL */}
         <div className="space-y-1">
           <Label className="text-[11px] text-muted-foreground">Webhook URL (compartilhado)</Label>
+          <Label className="text-[11px] text-muted-foreground">Webhook URL</Label>
           <div className="flex gap-1">
             <Input
               readOnly

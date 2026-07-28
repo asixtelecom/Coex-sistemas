@@ -47,10 +47,10 @@ interface AccountSummary {
   /** Default deal currency (ISO-4217). NOT NULL DEFAULT 'USD' in the
    *  DB (migration 021); narrowed to DEFAULT_CURRENCY when absent. */
   default_currency: string;
+  /** Admin-configurable company name shown in the sidebar. */
+  company_name: string | null;
+  /** Admin-configurable company logo URL shown in the sidebar. */
   logo_url: string | null;
-  footer_text: string | null;
-  endereco: string | null;
-  cnpj: string | null;
 }
 
 interface AuthContextValue {
@@ -76,6 +76,10 @@ interface AuthContextValue {
    *  the settings form so header/sidebar reflect the change without a
    *  full page reload. */
   refreshProfile: () => Promise<void>;
+  /** Optimistically update account branding fields (company_name,
+   *  logo_url) in the local state so the sidebar reflects changes
+   *  immediately without waiting for a network round-trip. */
+  updateAccountBranding: (patch: { company_name?: string | null; logo_url?: string | null }) => void;
 
   // ----------------------------------------------------------
   // Account-scoped context (added by the account-sharing series)
@@ -151,7 +155,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // missing account collapses to null rather than a half-
           // populated row (shouldn't happen post-017 NOT NULL, but
           // belt-and-braces against forks running older schemas).
-          "id, full_name, email, avatar_url, role, beta_features, account_id, account_role, system_role, permissions, account:accounts!inner(id, name, default_currency, logo_url, footer_text, endereco, cnpj)",
+          "id, full_name, email, avatar_url, role, beta_features, account_id, account_role, system_role, account:accounts!inner(id, name, default_currency, company_name, logo_url)",
         )
         .eq("user_id", userId)
         .maybeSingle();
@@ -177,10 +181,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               id: string;
               name: string;
               default_currency: string | null;
+              company_name: string | null;
               logo_url: string | null;
-              footer_text: string | null;
-              endereco: string | null;
-              cnpj: string | null;
             } | null);
         // Narrow default_currency defensively: forks running pre-021
         // schemas won't have the column, so a missing/null value reads
@@ -190,10 +192,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               id: accountRaw.id,
               name: accountRaw.name,
               default_currency: accountRaw.default_currency ?? DEFAULT_CURRENCY,
+              company_name: accountRaw.company_name ?? null,
               logo_url: accountRaw.logo_url ?? null,
-              footer_text: accountRaw.footer_text ?? null,
-              endereco: accountRaw.endereco ?? null,
-              cnpj: accountRaw.cnpj ?? null,
             }
           : null;
 
@@ -325,6 +325,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await fetchProfile(user.id);
   }, [user?.id, fetchProfile]);
 
+  const updateAccountBranding = useCallback((patch: { company_name?: string | null; logo_url?: string | null }) => {
+    setAccount((prev) => {
+      if (!prev) return prev;
+      return { ...prev, ...patch };
+    });
+  }, []);
+
   // Derive the role booleans once per profile change rather than on
   // every consumer render. Cheap regardless, but the memo also gives
   // each derived value a stable identity for React.memo / useEffect
@@ -373,6 +380,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         profileLoading,
         signOut,
         refreshProfile,
+        updateAccountBranding,
         account,
         defaultCurrency: account?.default_currency ?? DEFAULT_CURRENCY,
         ...derived,
@@ -403,6 +411,7 @@ export function useAuth(): AuthContextValue {
         window.location.href = "/login";
       },
       refreshProfile: async () => {},
+      updateAccountBranding: () => {},
       account: null,
       defaultCurrency: DEFAULT_CURRENCY,
       accountId: null,

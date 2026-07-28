@@ -175,15 +175,43 @@ export function AppearancePanel() {
       endereco.trim() !== (account.endereco ?? "") ||
       cnpj.trim() !== (account.cnpj ?? "") ||
       phone.trim() !== originalPhone);
+import { useState, useRef, useCallback } from "react";
+import { toast } from "sonner";
+import { Check, Moon, Palette, SunMoon, Sun, Upload, X, Loader2, Building2 } from "lucide-react";
+
+import { useTheme } from "@/hooks/use-theme";
+import { useAuth } from "@/hooks/use-auth";
+import { MODES, THEMES, type Mode, type ThemeId } from "@/lib/themes";
+import { cn } from "@/lib/utils";
+import { createClient } from "@/lib/supabase/client";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { SettingsPanelHead } from "./settings-panel-head";
+
+/**
+ * Appearance panel — light/dark mode + accent-color picker + company branding.
+ *
+ * Theme/mode: localStorage only (device-scoped). The boot script in
+ * layout.tsx replays both choices before first paint on subsequent loads.
+ *
+ * Branding: saved to the accounts table via PATCH /api/account.
+ */
+export function AppearancePanel() {
+  const { theme, setTheme, mode, setMode } = useTheme();
+  const { account, refreshProfile } = useAuth();
 
   return (
     <section className="max-w-3xl animate-in fade-in-50 duration-200">
       <SettingsPanelHead
         title="Aparência"
-        description="Defina o modo e a cor de destaque usados no aplicativo. Salvo neste dispositivo — experimente, as alterações são imediatas."
+        description="Defina o modo, a cor de destaque e a marca do aplicativo."
       />
 
-      <div className="space-y-4">
+      {/* Company branding */}
+      <BrandingSection />
+
+      <div className="mt-8 space-y-4">
         <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
           <SunMoon className="size-4 text-muted-foreground" />
           Modo
@@ -390,6 +418,200 @@ export function AppearancePanel() {
         </div>
       )}
     </section>
+  );
+}
+
+function BrandingSection() {
+  const { account, refreshProfile, updateAccountBranding } = useAuth();
+  const supabase = createClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [companyName, setCompanyName] = useState(account?.company_name ?? "");
+  const [logoUrl, setLogoUrl] = useState<string | null>(account?.logo_url ?? null);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  // Track if there are unsaved changes
+  const hasChanges =
+    companyName !== (account?.company_name ?? "") ||
+    logoUrl !== (account?.logo_url ?? null);
+
+  const handleUploadLogo = useCallback(async (file: File) => {
+    if (!account?.id) return;
+
+    // Validate file type
+    if (!file.type.startsWith("image/")) {
+      toast.error("Selecione um arquivo de imagem");
+      return;
+    }
+
+    // Validate file size (max 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("A imagem deve ter no máximo 2MB");
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const path = `account-${account.id}/logo-${Date.now()}.${file.name.split(".").pop()}`;
+      const { error: upErr } = await supabase.storage
+        .from("chat-media")
+        .upload(path, file, {
+          cacheControl: "3600",
+          upsert: true,
+          contentType: file.type,
+        });
+      if (upErr) throw new Error(upErr.message);
+
+      const { data: { publicUrl } } = supabase.storage
+        .from("chat-media")
+        .getPublicUrl(path);
+
+      setLogoUrl(publicUrl);
+    } catch (err) {
+      console.error("[BrandingSection] upload error:", err);
+      toast.error("Falha ao enviar logo");
+    } finally {
+      setUploading(false);
+    }
+  }, [account?.id, supabase]);
+
+  const handleSave = useCallback(async () => {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/account", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          company_name: companyName,
+          logo_url: logoUrl,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "Falha ao salvar");
+        return;
+      }
+      toast.success("Marca atualizada");
+      // Update local state immediately so sidebar reflects changes
+      updateAccountBranding({ company_name: companyName || null, logo_url: logoUrl });
+      // Also re-fetch in background to stay in sync with DB
+      refreshProfile();
+    } catch {
+      toast.error("Falha ao salvar");
+    } finally {
+      setSaving(false);
+    }
+  }, [companyName, logoUrl, refreshProfile, updateAccountBranding]);
+
+  const handleRemoveLogo = useCallback(() => {
+    setLogoUrl(null);
+  }, []);
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-4 space-y-4">
+      <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+        <Building2 className="size-4 text-muted-foreground" />
+        Marca do aplicativo
+      </h3>
+      <p className="text-xs text-muted-foreground">
+        Configure o nome e a logo exibidos no menu lateral.
+      </p>
+
+      {/* Company name */}
+      <div className="space-y-2">
+        <Label htmlFor="company_name">Nome da empresa</Label>
+        <Input
+          id="company_name"
+          placeholder="Ex: Minha Empresa CRM"
+          value={companyName}
+          onChange={(e) => setCompanyName(e.target.value)}
+          maxLength={100}
+        />
+      </div>
+
+      {/* Logo upload */}
+      <div className="space-y-2">
+        <Label>Logo</Label>
+        <div className="flex items-center gap-4">
+          {/* Preview */}
+          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg border border-border bg-muted overflow-hidden">
+            {uploading ? (
+              <Loader2 className="size-6 animate-spin text-muted-foreground" />
+            ) : logoUrl ? (
+              <img
+                src={logoUrl}
+                alt="Logo da empresa"
+                className="h-full w-full object-contain"
+              />
+            ) : (
+              <Building2 className="size-6 text-muted-foreground/40" />
+            )}
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleUploadLogo(file);
+                e.target.value = "";
+              }}
+            />
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+              >
+                <Upload className="size-3.5 mr-1" />
+                Enviar logo
+              </Button>
+              {logoUrl && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleRemoveLogo}
+                  disabled={uploading}
+                  className="text-destructive hover:text-destructive"
+                >
+                  <X className="size-3.5 mr-1" />
+                  Remover
+                </Button>
+              )}
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              PNG, JPG ou SVG. Máximo 2MB.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Save */}
+      <div className="flex justify-end pt-2">
+        <Button
+          size="sm"
+          onClick={handleSave}
+          disabled={saving || !hasChanges}
+          className="bg-primary hover:bg-primary/90"
+        >
+          {saving ? (
+            <>
+              <Loader2 className="size-3.5 animate-spin mr-1" />
+              Salvando...
+            </>
+          ) : (
+            "Salvar marca"
+          )}
+        </Button>
+      </div>
+    </div>
   );
 }
 

@@ -36,7 +36,7 @@ const statusColors: Record<string, string> = {
 
 export default function PedidosPage() {
   const supabase = createClient();
-  const { accountId } = useAuth();
+  const { accountId, account } = useAuth();
 
   const [deals, setDeals] = useState<Deal[]>([]);
   const [profiles, setProfiles] = useState<{ user_id: string; full_name: string; avatar_url: string | null }[]>([]);
@@ -149,12 +149,12 @@ export default function PedidosPage() {
   }, [selectedDeal]);
 
   const handlePrint = useCallback((deal: Deal) => {
-    generatePedidoPDF(deal);
-  }, []);
+    generatePedidoPDF(deal, account?.company_name ?? undefined);
+  }, [account?.company_name]);
 
   const handlePrintFromSheet = useCallback(() => {
-    if (selectedDeal) generatePedidoPDF(selectedDeal);
-  }, [selectedDeal]);
+    if (selectedDeal) generatePedidoPDF(selectedDeal, account?.company_name ?? undefined);
+  }, [selectedDeal, account?.company_name]);
 
   const handleFormSaved = useCallback(() => {
     setFormOpen(false);

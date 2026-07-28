@@ -124,6 +124,9 @@ export async function POST(
   }
 
   processTokenWebhook(body, phoneNumberId).catch((error) => {
+  const { channel_token } = await params
+
+  processTokenWebhook(body, channel_token).catch((error) => {
     console.error('Error processing token webhook:', error)
   })
 
@@ -157,6 +160,21 @@ async function processTokenWebhook(
   }
 
   const config = configRows[0]
+
+  channelToken: string,
+) {
+  if (!body.entry) return
+
+  const { data: config, error: configError } = await supabaseAdmin()
+    .from('whatsapp_config')
+    .select('*')
+    .eq('channel_token', channelToken)
+    .maybeSingle()
+
+  if (configError || !config) {
+    console.error('No config found for channel_token:', channelToken, configError)
+    return
+  }
 
   let channelId: string | undefined
   if (config.id) {

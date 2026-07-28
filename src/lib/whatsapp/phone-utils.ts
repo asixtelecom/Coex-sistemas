@@ -100,7 +100,48 @@ export function phoneVariants(sanitized: string): string[] {
  * Detected via error code 131030 or the standard error text.
  */
 export function isRecipientNotAllowedError(message: string): boolean {
-  return /131030|not in allowed list|not in the allowed list/i.test(message)
+  return /131030|not in allowed list|not in the allowed list/i.test(message);
+}
+
+/**
+ * Format a Brazilian phone number for display.
+ * Handles numbers with or without country code (55).
+ * Examples:
+ *   "5511947190519" → "(11) 94719-0519"
+ *   "11947190519" → "(11) 94719-0519"
+ *   "947190519" → "94719-0519"
+ */
+export function formatPhoneBR(phone: string): string {
+  if (!phone) return '';
+  
+  // Remove all non-digit characters
+  let digits = phone.replace(/\D/g, '');
+  
+  // If starts with 55 (Brazil country code) and has enough digits, strip it
+  if (digits.startsWith('55') && digits.length >= 13) {
+    digits = digits.slice(2);
+  }
+  
+  // Format based on digit count (Brazilian local format)
+  if (digits.length === 11) {
+    // Mobile: (XX) 9XXXX-XXXX
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+  }
+  if (digits.length === 10) {
+    // Landline: (XX) XXXX-XXXX
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  }
+  if (digits.length === 9) {
+    // Mobile without area code: 9XXXX-XXXX
+    return `${digits.slice(0, 5)}-${digits.slice(5)}`;
+  }
+  if (digits.length === 8) {
+    // Landline without area code: XXXX-XXXX
+    return `${digits.slice(0, 4)}-${digits.slice(4)}`;
+  }
+  
+  // Return as-is if format is unexpected
+  return digits;
 }
 
 /**

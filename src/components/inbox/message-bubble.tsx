@@ -27,6 +27,9 @@ interface MessageBubbleProps {
   currentUserId?: string;
   onToggleReaction?: (emoji: string) => void;
   agentAvatarUrl?: string | null;
+  /** Avatar URL of the agent who sent this message. */
+  agentAvatarUrl?: string | null;
+  /** Full name of the agent who sent this message. */
   agentName?: string | null;
 }
 
@@ -400,6 +403,7 @@ export function MessageBubble({
         <div
           className={cn(
             "relative min-w-0 max-w-[75%] rounded-2xl px-3 py-2",
+            "relative max-w-[75%] rounded-2xl px-3 py-2",
             isAgent
               ? "rounded-br-md bg-primary text-primary-foreground"
               : "rounded-bl-md bg-muted text-foreground",
@@ -422,6 +426,10 @@ export function MessageBubble({
             <span
               className={cn(
                 "text-[10px]",
+                // Outbound bubbles sit on the primary fill, so the
+                // timestamp must read against that (not the neutral
+                // foreground) — otherwise it goes low-contrast in light
+                // mode. Inbound bubbles use the muted surface.
                 isAgent ? "text-primary-foreground/70" : "text-muted-foreground",
               )}
             >

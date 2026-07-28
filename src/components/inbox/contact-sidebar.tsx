@@ -21,6 +21,7 @@ import {
   Trash2,
   Package,
 } from "lucide-react";
+import { formatPhoneBR } from "@/lib/whatsapp/phone-utils";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { format } from "date-fns";
@@ -215,7 +216,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     );
   }
 
-  const displayName = contact.name || contact.phone;
+  const displayName = contact.name || formatPhoneBR(contact.phone);
   const initials = displayName.charAt(0).toUpperCase();
 
   return (
@@ -250,7 +251,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
               className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
             >
               <Phone className="h-4 w-4 text-muted-foreground" />
-              <span className="flex-1 text-left">{isAgent ? maskPhone(contact.phone) : contact.phone}</span>
+              <span className="flex-1 text-left">{formatPhoneBR(contact.phone)}</span>
               {copied ? (
                 <Check className="h-3 w-3 text-primary" />
               ) : (
